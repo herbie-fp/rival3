@@ -1,14 +1,15 @@
 //! Core interval operations
 
 use super::value::{Endpoint, ErrorFlags, Ival, IvalClass, classify};
+use crate::mpfr::mpfr_get_exp;
 use crate::mpfr::{
     acosh_overflow_threshold, exp_overflow_threshold, exp2_overflow_threshold, inf, mpfr_abs,
     mpfr_acos, mpfr_acosh, mpfr_asin, mpfr_asinh, mpfr_atan, mpfr_atan2, mpfr_atanh, mpfr_cbrt,
-    mpfr_cmpabs, mpfr_cosh, mpfr_erf, mpfr_erfc, mpfr_exp, mpfr_exp2, mpfr_expm1, mpfr_log,
-    mpfr_log1p, mpfr_log2, mpfr_log10, mpfr_max, mpfr_min, mpfr_neg, mpfr_pi, mpfr_rint, mpfr_sign,
-    mpfr_sinh, mpfr_sqrt, mpfr_tanh, sinh_overflow_threshold, zero,
+    mpfr_ceil, mpfr_cmpabs, mpfr_cosh, mpfr_erf, mpfr_erfc, mpfr_exp, mpfr_exp2, mpfr_expm1,
+    mpfr_floor, mpfr_log, mpfr_log1p, mpfr_log2, mpfr_log10, mpfr_max, mpfr_min, mpfr_neg, mpfr_pi,
+    mpfr_rint, mpfr_round, mpfr_sign, mpfr_sinh, mpfr_sqrt, mpfr_tanh, mpfr_trunc,
+    sinh_overflow_threshold, zero,
 };
-use crate::mpfr::{is_exact_operation, mpfr_get_exp};
 use rug::{Assign, Float, float::Round, ops::NegAssign};
 
 impl Ival {
@@ -131,29 +132,26 @@ impl Ival {
 
     pub fn exp_assign(&mut self, a: &Ival) {
         self.monotonic_assign(&mpfr_exp, a);
-        self.overflows_loose_at(
-            a,
-            -exp_overflow_threshold(self.prec()),
-            exp_overflow_threshold(self.prec()),
-        );
+        let thresh = exp_overflow_threshold(self.prec());
+        let mut neg = thresh.clone();
+        neg.neg_assign();
+        self.overflows_loose_at(a, neg, thresh);
     }
 
     pub fn exp2_assign(&mut self, a: &Ival) {
         self.monotonic_assign(&mpfr_exp2, a);
-        self.overflows_loose_at(
-            a,
-            -exp2_overflow_threshold(self.prec()),
-            exp2_overflow_threshold(self.prec()),
-        );
+        let thresh = exp2_overflow_threshold(self.prec());
+        let mut neg = thresh.clone();
+        neg.neg_assign();
+        self.overflows_loose_at(a, neg, thresh);
     }
 
     pub fn expm1_assign(&mut self, a: &Ival) {
         self.monotonic_assign(&mpfr_expm1, a);
-        self.overflows_at(
-            a,
-            -exp_overflow_threshold(self.prec()),
-            exp_overflow_threshold(self.prec()),
-        );
+        let thresh = exp_overflow_threshold(self.prec());
+        let mut neg = thresh.clone();
+        neg.neg_assign();
+        self.overflows_at(a, neg, thresh);
     }
 
     pub fn log_assign(&mut self, a: &Ival) {
@@ -187,10 +185,29 @@ impl Ival {
 
     pub fn logb_assign(&mut self, a: &Ival) {
         let mut abs_a = Ival::zero(a.max_prec());
-        let mut tmp = Ival::zero(self.prec());
         abs_a.exact_fabs_assign(a);
+
+        let mut tmp = Ival::zero(self.prec());
         tmp.log2_assign(&abs_a);
-        self.floor_assign(&tmp);
+        self.err = tmp.err;
+
+        let lo = abs_a.lo.as_float();
+        let hi = abs_a.hi.as_float();
+
+        if lo.is_zero() || hi.is_zero() || lo.is_nan() || hi.is_nan() {
+            self.floor_assign(&tmp);
+            return;
+        }
+
+        let prec = self.prec();
+        let lo_exp = mpfr_get_exp(lo) - 1;
+        let hi_exp = mpfr_get_exp(hi) - 1;
+
+        self.lo.as_float_mut().assign(Float::with_val(prec, lo_exp));
+        self.hi.as_float_mut().assign(Float::with_val(prec, hi_exp));
+
+        self.lo.immovable = abs_a.lo.immovable;
+        self.hi.immovable = abs_a.hi.immovable;
     }
 
     pub fn asin_assign(&mut self, a: &Ival) {
@@ -271,22 +288,20 @@ impl Ival {
 
     pub fn sinh_assign(&mut self, a: &Ival) {
         self.monotonic_assign(&mpfr_sinh, a);
-        self.overflows_at(
-            a,
-            -sinh_overflow_threshold(self.prec()),
-            sinh_overflow_threshold(self.prec()),
-        );
+        let thresh = sinh_overflow_threshold(self.prec());
+        let mut neg = thresh.clone();
+        neg.neg_assign();
+        self.overflows_at(a, neg, thresh);
     }
 
     pub fn cosh_assign(&mut self, a: &Ival) {
         let mut abs_a = Ival::zero(a.max_prec());
         abs_a.exact_fabs_assign(a);
         self.monotonic_assign(&mpfr_cosh, &abs_a);
-        self.overflows_at(
-            &abs_a,
-            -acosh_overflow_threshold(self.prec()),
-            acosh_overflow_threshold(self.prec()),
-        );
+        let thresh = acosh_overflow_threshold(self.prec());
+        let mut neg = thresh.clone();
+        neg.neg_assign();
+        self.overflows_at(&abs_a, neg, thresh);
     }
 
     pub fn tanh_assign(&mut self, a: &Ival) {
@@ -327,31 +342,19 @@ impl Ival {
     }
 
     pub fn round_assign(&mut self, a: &Ival) {
-        self.monotonic_assign(
-            &|input: &Float, out: &mut Float, rnd: Round| fix_rounding_round(input, out, rnd),
-            a,
-        );
+        self.monotonic_assign(&mpfr_round, a);
     }
 
     pub fn ceil_assign(&mut self, a: &Ival) {
-        self.monotonic_assign(
-            &|input: &Float, out: &mut Float, rnd: Round| fix_rounding_ceil(input, out, rnd),
-            a,
-        );
+        self.monotonic_assign(&mpfr_ceil, a);
     }
 
     pub fn floor_assign(&mut self, a: &Ival) {
-        self.monotonic_assign(
-            &|input: &Float, out: &mut Float, rnd: Round| fix_rounding_floor(input, out, rnd),
-            a,
-        );
+        self.monotonic_assign(&mpfr_floor, a);
     }
 
     pub fn trunc_assign(&mut self, a: &Ival) {
-        self.monotonic_assign(
-            &|input: &Float, out: &mut Float, rnd: Round| fix_rounding_trunc(input, out, rnd),
-            a,
-        );
+        self.monotonic_assign(&mpfr_trunc, a);
     }
 
     pub fn fmin_assign(&mut self, a: &Ival, b: &Ival) {
@@ -490,51 +493,4 @@ pub fn endpoint_minmax(
     let v2 = ep2.as_float();
     f(v1, v2, out, rnd);
     (out == v1 && ep1.immovable) || (out == v2 && ep2.immovable)
-}
-
-/// Fix MPFR rounding bug where large values can round to infinity
-/// If exponent >= 0, value is already an integer, so use rint
-/// Otherwise use the specified rounding operation
-fn fix_rounding_round(input: &Float, out: &mut Float, rnd: Round) -> bool {
-    if mpfr_get_exp(input) >= 0 {
-        mpfr_rint(input, out, rnd)
-    } else {
-        is_exact_operation(|| {
-            let result = input.round_ref();
-            out.assign(result);
-        })
-    }
-}
-
-fn fix_rounding_ceil(input: &Float, out: &mut Float, rnd: Round) -> bool {
-    if mpfr_get_exp(input) >= 0 {
-        mpfr_rint(input, out, rnd)
-    } else {
-        is_exact_operation(|| {
-            let result = input.ceil_ref();
-            out.assign(result);
-        })
-    }
-}
-
-fn fix_rounding_floor(input: &Float, out: &mut Float, rnd: Round) -> bool {
-    if mpfr_get_exp(input) >= 0 {
-        mpfr_rint(input, out, rnd)
-    } else {
-        is_exact_operation(|| {
-            let result = input.floor_ref();
-            out.assign(result);
-        })
-    }
-}
-
-fn fix_rounding_trunc(input: &Float, out: &mut Float, rnd: Round) -> bool {
-    if mpfr_get_exp(input) >= 0 {
-        mpfr_rint(input, out, rnd)
-    } else {
-        is_exact_operation(|| {
-            let result = input.trunc_ref();
-            out.assign(result);
-        })
-    }
 }

@@ -7,6 +7,7 @@ use crate::eval::{
     machine::{Discretization, Hint, Machine},
 };
 use crate::interval::Ival;
+use crate::profile::Execution;
 
 impl<D: Discretization> Machine<D> {
     /// Evaluate the machine with given inputs until convergence or the iteration limit
@@ -104,6 +105,9 @@ impl<D: Discretization> Machine<D> {
         self.state.precisions.fill(0);
         self.state.repeats.fill(false);
         self.state.output_distance.fill(false);
+        if self.state.profiling_enabled {
+            self.state.profiler.reset();
+        }
     }
 
     /// Execute instructions once using the supplied precision and hint plan
@@ -130,7 +134,29 @@ impl<D: Discretization> Machine<D> {
             match hint {
                 Hint::Skip => {}
                 Hint::Execute => {
-                    execute::evaluate_instruction(instruction, &mut self.state.registers, precision)
+                    if self.state.profiling_enabled {
+                        let start = std::time::Instant::now();
+                        execute::evaluate_instruction(
+                            instruction,
+                            &mut self.state.registers,
+                            precision,
+                        );
+                        let dt = start.elapsed().as_secs_f64() * 1000.0;
+                        let exec = Execution {
+                            name: instruction.data.name_static(),
+                            number: idx as i32,
+                            precision,
+                            time_ms: dt,
+                            iteration: self.state.iteration,
+                        };
+                        self.state.profiler.record(exec);
+                    } else {
+                        execute::evaluate_instruction(
+                            instruction,
+                            &mut self.state.registers,
+                            precision,
+                        )
+                    }
                 }
                 // Path reduction aliasing the output of an instruction to one of its inputs
                 Hint::Alias(pos) => {

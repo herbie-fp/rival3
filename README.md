@@ -1,5 +1,26 @@
 # rust-rs
-Rival is a library for evaluating real expressions to high precision. Port of https://github.com/herbie-fp/rival.
+Rival is a library for evaluating real expressions to high precision. Port of https://github.com/herbie-fp/rival. You can play around with the CLI:
+
+```
+$ cargo run --bin rival-cli --release -- "(- (sqrt (+ x 1)) 1)" "(x)" "(1e-30)"
+```
+Will give you:
+```
+Executed 4 instructions for 2 iterations:
+
+┌────────┬────────┬────────┬────────┬────────┐
+│ Name   │ 0 Bits │ 0 Time │ 1 Bits │ 1 Time │
+├────────┼────────┼────────┼────────┼────────┤
+│ adjust │        │        │        │ 0.5 µs │
+│ Add    │     62 │ 0.3 µs │    633 │ 0.2 µs │
+│ Sqrt   │     60 │ 0.8 µs │    632 │ 1.6 µs │
+│ Sub    │     58 │ 0.2 µs │     58 │ 0.2 µs │
+│ Total  │        │ 1.2 µs │        │ 2.6 µs │
+└────────┴────────┴────────┴────────┴────────┘
+
+Final value: [0.0000000000000000000000000000005, 0.0000000000000000000000000000005]
+Total: 5.2 µs
+```
 
 ## Port Notes
 * File breakdown:
@@ -16,6 +37,9 @@ Rival is a library for evaluating real expressions to high precision. Port of ht
     * `value.rs`: Defines `Ival`, `Endpoint`, and `ErrorFlags`
     * Everything else is the same as `ops/*.rkt` in Racket Rival
   * `mpfr.rs`: Unsafe wrappers around MPFR
+* Appears to be much faster than Racket Rival:
+  * 3-5x faster for complex, MPFR dominant computations (I suspect Racket has some heavy MPFR FFI costs)
+  * >30x faster for smaller, Racket runtime dominant computations
 * A number of TODO comments are spread throughout the code (mostly about efficiency)
 * I ran both the Racket Rival and Rust Rival on a large portion of `points.json` (from Racket Rival's `infra/`) and compared machine state per iteration. Observations:
   * Compared per iteration precisions, repeats, etc.
@@ -23,7 +47,6 @@ Rival is a library for evaluating real expressions to high precision. Port of ht
   * Final precisions are almost always the same, and in the cases where they differ, I believe it's a bug in the printing logic rather than a difference in the code
   * Rust Rival was noticeably faster
 * What's missing:
-  * Profiling
   * Early stopping when we exceed max precision
   * Proper handling of rationals
     * Currently both the numerator and denominator are expressed as `u64`

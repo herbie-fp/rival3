@@ -3,6 +3,14 @@ name = "rival"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+name = "rival"
+path = "src/lib.rs"
+
+[[bin]]
+name = "rival-cli"
+path = "src/bin/main.rs"
+
 [dependencies]
 rug = { version = "1.24", features = ["float"] }
 gmp-mpfr-sys = "1.6"
@@ -11,7 +19,4 @@ ordered-float = "5.0"
 indexmap = "2.12"
 itertools = "0.14.0"
 thiserror = "1"
-
-[lib]
-name = "rival"
-path = "src/lib.rs"
+ascii_table = "4.0"

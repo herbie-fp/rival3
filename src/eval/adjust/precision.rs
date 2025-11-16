@@ -157,7 +157,10 @@ fn propagate_child<D: Discretization>(
                 .max((parent_upper as i64).saturating_add(bounds.upper)),
         );
         min_bounds[child_idx] = clamp_to_bits(
-            (min_bounds[child_idx] as i64).max((parent_lower as i64).saturating_add(bounds.upper)),
+            (min_bounds[child_idx] as i64).max(
+                (parent_lower as i64)
+                    .saturating_add(bounds.lower.max(0)),
+            ),
         );
     }
 }

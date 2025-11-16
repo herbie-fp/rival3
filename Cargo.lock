@@ -3,6 +3,12 @@
 version = 4
 
 [[package]]
+name = "ascii_table"
+version = "4.0.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f4ef8ee0b4eedc5a877a8a768fecfabbe4c8b9791e17763225139a858dabd8e7"
+
+[[package]]
 name = "autocfg"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -175,6 +181,7 @@ dependencies = [
 name = "rival"
 version = "0.1.0"
 dependencies = [
+ "ascii_table",
  "gmp-mpfr-sys",
  "indexmap",
  "itertools",

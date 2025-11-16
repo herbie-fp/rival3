@@ -107,6 +107,36 @@ macro_rules! def_ops {
             $( $const_name, )*
         }
 
+        pub fn name_of_constant(op: ConstantOp) -> &'static str {
+            match op {
+                $( ConstantOp::$const_name => stringify!($const_name), )*
+            }
+        }
+
+        pub fn name_of_unary(op: UnaryOp) -> &'static str {
+            match op {
+                $( UnaryOp::$unary_name => stringify!($unary_name), )*
+            }
+        }
+
+        pub fn name_of_unary_param(op: UnaryParamOp) -> &'static str {
+            match op {
+                $( UnaryParamOp::$unary_param_name => stringify!($unary_param_name), )*
+            }
+        }
+
+        pub fn name_of_binary(op: BinaryOp) -> &'static str {
+            match op {
+                $( BinaryOp::$binary_name => stringify!($binary_name), )*
+            }
+        }
+
+        pub fn name_of_ternary(op: TernaryOp) -> &'static str {
+            match op {
+                $( TernaryOp::$ternary_name => stringify!($ternary_name), )*
+            }
+        }
+
         /// Compute error amplification bounds for unary operations
         pub fn bounds_for_unary(
             ctx: &TrickContext,

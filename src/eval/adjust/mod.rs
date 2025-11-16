@@ -7,6 +7,7 @@ use crate::eval::{
     machine::{Discretization, Hint, Machine},
     tricks::slack_bits,
 };
+use crate::profile::Execution;
 use path_reduction::{path_reduction, schedule_child};
 use precision::{precision_tuning, update_repeats};
 
@@ -82,6 +83,12 @@ impl<D: Discretization> Machine<D> {
 /// Compute required precision for each instruction by propagating from outputs to inputs
 fn backward_pass<D: Discretization>(machine: &mut Machine<D>, hints: &[Hint]) {
     let instruction_count = machine.state.instructions.len();
+    let profiling = machine.state.profiling_enabled;
+    let start_time = if profiling {
+        Some(std::time::Instant::now())
+    } else {
+        None
+    };
     let first_tuning_pass = machine.state.iteration == 1;
 
     let mut new_precisions = vec![0u32; instruction_count];
@@ -177,4 +184,15 @@ fn backward_pass<D: Discretization>(machine: &mut Machine<D>, hints: &[Hint]) {
     // Step 5: Update machine state
     machine.state.repeats.copy_from_slice(&work_repeats);
     machine.state.precisions.copy_from_slice(&new_precisions);
+
+    if profiling && let Some(t0) = start_time {
+        let dt_ms = t0.elapsed().as_secs_f64() * 1000.0;
+        machine.state.profiler.record(Execution {
+            name: "adjust",
+            number: -1,
+            precision: (machine.state.iteration as u32) * 1000,
+            time_ms: dt_ms,
+            iteration: machine.state.iteration,
+        });
+    }
 }

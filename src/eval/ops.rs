@@ -36,23 +36,24 @@ def_ops! {
 
         Sqrt: {
             method: sqrt_assign,
-            bounds: |ctx, _, inp| AmplBounds::new(ctx.logspan(inp) / 2, 0),
+            bounds: |ctx, _, inp| AmplBounds::new((ctx.logspan(inp) / 2).saturating_sub(1), 0),
             optimize: |arg| {
                 // sqrt(x^2 + y^2) => hypot(x, y)
                 // sqrt(x^2 + 1) => hypot(x, 1)
                 // sqrt(1 + x^2) => hypot(1, x)
                 match arg {
+                    // TODO: Consider pow(x, 2) pattern in addition to x * x
                     Add(a, b) => match (&*a, &*b) {
                         // sqrt(x^2 + y^2)
                         (Mul(x1, x2), Mul(y1, y2)) if x1 == x2 && y1 == y2 => {
                             Hypot(x1.clone(), y1.clone())
                         }
                         // sqrt(x^2 + 1)
-                        (Mul(x1, x2), Literal(one)) if x1 == x2 && (*one - 1.0).abs() == 0.0 => {
+                        (Mul(x1, x2), Literal(one)) if x1 == x2 && one == &1.0 => {
                             Hypot(x1.clone(), Box::new(Literal(*one)))
                         }
                         // sqrt(1 + x^2)
-                        (Literal(one), Mul(x1, x2)) if x1 == x2 && (*one - 1.0).abs() == 0.0 => {
+                        (Literal(one), Mul(x1, x2)) if x1 == x2 && one == &1.0 => {
                             Hypot(Box::new(Literal(*one)), x1.clone())
                         }
                         _ => Sqrt(Box::new(Add(a, b))),
@@ -64,7 +65,7 @@ def_ops! {
 
         Cbrt: {
             method: cbrt_assign,
-            bounds: |ctx, _, inp| AmplBounds::new((2 * ctx.logspan(inp)) / 3, 0),
+            bounds: |ctx, _, inp| AmplBounds::new(((2 * ctx.logspan(inp)) / 3).saturating_sub(1), 0),
         },
 
         Exp: {
@@ -122,8 +123,8 @@ def_ops! {
                     Exp(x) => *x,
                     // log(1 + x) or log(x + 1) => log1p(x)
                     Add(a, b) => match (&*a, &*b) {
-                        (Literal(one), x) if (*one - 1.0).abs() == 0.0 => Log1p(Box::new(x.clone())),
-                        (x, Literal(one)) if (*one - 1.0).abs() == 0.0 => Log1p(Box::new(x.clone())),
+                        (Literal(one), x) if one == &1.0 => Log1p(Box::new(x.clone())),
+                        (x, Literal(one)) if one == &1.0 => Log1p(Box::new(x.clone())),
                         _ => Log(Box::new(Add(a, b))),
                     },
                     other => Log(Box::new(other)),
@@ -616,11 +617,11 @@ def_ops! {
             optimize: |lhs, rhs| {
                 match (&lhs, &rhs) {
                     // (- (exp x) 1) => expm1(x)
-                    (Exp(x), Literal(one)) if (one - 1.0).abs() == 0.0 => {
+                    (Exp(x), Literal(one)) if one == &1.0 => {
                         Expm1(x.clone())
                     }
                     // (- 1 (exp x)) => neg(expm1(x))
-                    (Literal(one), Exp(x)) if (one - 1.0).abs() == 0.0 => {
+                    (Literal(one), Exp(x)) if one == &1.0 => {
                         Neg(Box::new(Expm1(x.clone())))
                     }
                     _ => Sub(Box::new(lhs), Box::new(rhs))

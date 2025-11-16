@@ -15,24 +15,10 @@ fn to_mpfr_round(rnd: Round) -> mpfr::rnd_t {
     }
 }
 
-/// Returns true if the MPFR operation was exact (no rounding error); not thread safe
-pub fn is_exact_operation<F>(f: F) -> bool
-where
-    F: FnOnce(),
-{
-    unsafe {
-        mpfr::clear_inexflag();
-    }
-    f();
-    unsafe { mpfr::inexflag_p() == 0 }
-}
-
 macro_rules! mpfr_unary_op {
     ($name:ident, $func:path) => {
         pub fn $name(input: &Float, out: &mut Float, rnd: Round) -> bool {
-            is_exact_operation(|| unsafe {
-                $func(out.as_raw_mut(), input.as_raw(), to_mpfr_round(rnd));
-            })
+            unsafe { $func(out.as_raw_mut(), input.as_raw(), to_mpfr_round(rnd)) == 0 }
         }
     };
 }
@@ -40,14 +26,14 @@ macro_rules! mpfr_unary_op {
 macro_rules! mpfr_binary_op {
     ($name:ident, $func:path) => {
         pub fn $name(lhs: &Float, rhs: &Float, out: &mut Float, rnd: Round) -> bool {
-            is_exact_operation(|| unsafe {
+            unsafe {
                 $func(
                     out.as_raw_mut(),
                     lhs.as_raw(),
                     rhs.as_raw(),
                     to_mpfr_round(rnd),
-                );
-            })
+                ) == 0
+            }
         }
     };
 }
@@ -55,15 +41,15 @@ macro_rules! mpfr_binary_op {
 macro_rules! mpfr_ternary_op {
     ($name:ident, $func:path) => {
         pub fn $name(a: &Float, b: &Float, c: &Float, out: &mut Float, rnd: Round) -> bool {
-            is_exact_operation(|| unsafe {
+            unsafe {
                 $func(
                     out.as_raw_mut(),
                     a.as_raw(),
                     b.as_raw(),
                     c.as_raw(),
                     to_mpfr_round(rnd),
-                );
-            })
+                ) == 0
+            }
         }
     };
 }
@@ -131,27 +117,19 @@ mpfr_binary_op!(mpfr_remainder, mpfr::remainder);
 mpfr_ternary_op!(mpfr_fma, mpfr::fma);
 
 pub fn mpfr_cosu(x: &Float, n: u64, out: &mut Float, rnd: Round) -> bool {
-    is_exact_operation(|| unsafe {
-        mpfr::cosu(out.as_raw_mut(), x.as_raw(), n, to_mpfr_round(rnd));
-    })
+    unsafe { mpfr::cosu(out.as_raw_mut(), x.as_raw(), n, to_mpfr_round(rnd)) == 0 }
 }
 
 pub fn mpfr_sinu(x: &Float, n: u64, out: &mut Float, rnd: Round) -> bool {
-    is_exact_operation(|| unsafe {
-        mpfr::sinu(out.as_raw_mut(), x.as_raw(), n, to_mpfr_round(rnd));
-    })
+    unsafe { mpfr::sinu(out.as_raw_mut(), x.as_raw(), n, to_mpfr_round(rnd)) == 0 }
 }
 
 pub fn mpfr_tanu(x: &Float, n: u64, out: &mut Float, rnd: Round) -> bool {
-    is_exact_operation(|| unsafe {
-        mpfr::tanu(out.as_raw_mut(), x.as_raw(), n, to_mpfr_round(rnd));
-    })
+    unsafe { mpfr::tanu(out.as_raw_mut(), x.as_raw(), n, to_mpfr_round(rnd)) == 0 }
 }
 
 pub fn mpfr_pi(out: &mut Float, rnd: Round) -> bool {
-    is_exact_operation(|| unsafe {
-        mpfr::const_pi(out.as_raw_mut(), to_mpfr_round(rnd));
-    })
+    unsafe { mpfr::const_pi(out.as_raw_mut(), to_mpfr_round(rnd)) == 0 }
 }
 
 pub fn mpfr_integer(x: &Float) -> bool {
@@ -187,51 +165,35 @@ pub fn mpfr_get_exp(x: &Float) -> i64 {
 }
 
 pub fn mpfr_floor_inplace(x: &mut Float) -> bool {
-    is_exact_operation(|| unsafe {
-        mpfr::floor(x.as_raw_mut(), x.as_raw());
-    })
+    unsafe { mpfr::floor(x.as_raw_mut(), x.as_raw()) == 0 }
 }
 
 pub fn mpfr_floor(input: &Float, out: &mut Float, _rnd: Round) -> bool {
-    is_exact_operation(|| unsafe {
-        mpfr::floor(out.as_raw_mut(), input.as_raw());
-    })
+    unsafe { mpfr::floor(out.as_raw_mut(), input.as_raw()) == 0 }
 }
 
 pub fn mpfr_ceil_inplace(x: &mut Float) -> bool {
-    is_exact_operation(|| unsafe {
-        mpfr::ceil(x.as_raw_mut(), x.as_raw());
-    })
+    unsafe { mpfr::ceil(x.as_raw_mut(), x.as_raw()) == 0 }
 }
 
 pub fn mpfr_ceil(input: &Float, out: &mut Float, _rnd: Round) -> bool {
-    is_exact_operation(|| unsafe {
-        mpfr::ceil(out.as_raw_mut(), input.as_raw());
-    })
+    unsafe { mpfr::ceil(out.as_raw_mut(), input.as_raw()) == 0 }
 }
 
 pub fn mpfr_round_inplace(x: &mut Float) -> bool {
-    is_exact_operation(|| unsafe {
-        mpfr::round(x.as_raw_mut(), x.as_raw());
-    })
+    unsafe { mpfr::round(x.as_raw_mut(), x.as_raw()) == 0 }
 }
 
 pub fn mpfr_round(input: &Float, out: &mut Float, _rnd: Round) -> bool {
-    is_exact_operation(|| unsafe {
-        mpfr::round(out.as_raw_mut(), input.as_raw());
-    })
+    unsafe { mpfr::round(out.as_raw_mut(), input.as_raw()) == 0 }
 }
 
 pub fn mpfr_trunc_inplace(x: &mut Float) -> bool {
-    is_exact_operation(|| unsafe {
-        mpfr::trunc(x.as_raw_mut(), x.as_raw());
-    })
+    unsafe { mpfr::trunc(x.as_raw_mut(), x.as_raw()) == 0 }
 }
 
 pub fn mpfr_trunc(input: &Float, out: &mut Float, _rnd: Round) -> bool {
-    is_exact_operation(|| unsafe {
-        mpfr::trunc(out.as_raw_mut(), input.as_raw());
-    })
+    unsafe { mpfr::trunc(out.as_raw_mut(), input.as_raw()) == 0 }
 }
 
 pub fn mpfr_cmpabs(x: &Float, y: &Float) -> i32 {

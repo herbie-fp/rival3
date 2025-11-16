@@ -6,10 +6,14 @@ impl Ival {
     pub fn set_pi(&mut self) {
         mpfr_pi(self.lo.as_float_mut(), Round::Down);
         mpfr_pi(self.hi.as_float_mut(), Round::Up);
+        self.lo.immovable = true;
+        self.hi.immovable = true;
     }
 
     pub fn set_e(&mut self) {
         mpfr_e(self.lo.as_float_mut(), Round::Down);
         mpfr_e(self.hi.as_float_mut(), Round::Up);
+        self.lo.immovable = true;
+        self.hi.immovable = true;
     }
 }

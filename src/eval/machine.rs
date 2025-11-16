@@ -7,7 +7,11 @@ use super::{
     execute,
     instructions::{Instruction, InstructionData},
 };
-use crate::{eval::ops, interval::Ival};
+use crate::{
+    eval::ops,
+    interval::Ival,
+    profile::{Execution, Profiler},
+};
 use indexmap::IndexMap;
 use rug::Float;
 
@@ -45,6 +49,10 @@ pub struct MachineState {
 
     pub iteration: usize,
     pub bumps: usize, // Number of times bumps mode has been activated
+
+    // Profiling
+    pub profiler: Profiler,
+    pub profiling_enabled: bool,
 
     // Configuration parameters
     pub max_precision: u32,
@@ -84,6 +92,8 @@ pub struct MachineBuilder<D: Discretization> {
     slack_unit: i64,
     base_tuning_precision: u32,
     ampl_tuning_bits: u32,
+    profile_capacity: usize,
+    profiling_enabled: bool,
 }
 
 impl<D: Discretization> MachineBuilder<D> {
@@ -96,6 +106,8 @@ impl<D: Discretization> MachineBuilder<D> {
             slack_unit: 512,
             base_tuning_precision: 5,
             ampl_tuning_bits: 2,
+            profile_capacity: 1000,
+            profiling_enabled: true,
         }
     }
 
@@ -126,6 +138,18 @@ impl<D: Discretization> MachineBuilder<D> {
     /// Set the amplification tuning bits added during propagation
     pub fn ampl_tuning_bits(mut self, v: u32) -> Self {
         self.ampl_tuning_bits = v;
+        self
+    }
+
+    /// Enable or disable per-instruction profiling (enabled by default)
+    pub fn enable_profiling(mut self, enabled: bool) -> Self {
+        self.profiling_enabled = enabled;
+        self
+    }
+
+    /// Set profiling buffer capacity (default 1000 records)
+    pub fn profile_capacity(mut self, cap: usize) -> Self {
+        self.profile_capacity = cap;
         self
     }
 
@@ -191,6 +215,8 @@ impl<D: Discretization> MachineBuilder<D> {
             slack_unit: self.slack_unit,
             bumps_activated: false,
             ampl_tuning_bits: self.ampl_tuning_bits,
+            profiler: Profiler::with_capacity(self.profile_capacity),
+            profiling_enabled: self.profiling_enabled,
         };
 
         state.output_distance.fill(false);
@@ -248,6 +274,25 @@ impl<D: Discretization> Machine<D> {
     #[inline]
     pub fn bumps(&self) -> usize {
         self.state.bumps
+    }
+
+    /// Return the current iteration number
+    #[inline]
+    pub fn iteration(&self) -> usize {
+        self.state.iteration
+    }
+
+    /// Return the total number of instructions in the machine
+    #[inline]
+    pub fn instruction_count(&self) -> usize {
+        self.state.instructions.len()
+    }
+
+    /// Return a snapshot of recorded executions and reset the internal buffer pointer.
+    pub fn take_executions(&mut self) -> Vec<Execution> {
+        let slice = self.state.profiler.records().to_vec();
+        self.state.profiler.reset();
+        slice
     }
 }
 
