@@ -93,7 +93,17 @@ impl Ival {
     pub fn bool_interval(lo_true: bool, hi_true: bool) -> Self {
         // 2-bit precision is sufficient for 0/1 endpoints
         let to_float = |b: bool| Float::with_val(2, if b { 1 } else { 0 });
-        Self::from_lo_hi(to_float(lo_true), to_float(hi_true))
+        let (lo, hi) = (to_float(lo_true), to_float(hi_true));
+        let err = if lo.is_nan() || hi.is_nan() || (lo.eq(&hi) && lo.is_infinite()) {
+            ErrorFlags::error()
+        } else {
+            ErrorFlags::none()
+        };
+        Ival {
+            lo: Endpoint::new(OrdFloat::from(lo), true),
+            hi: Endpoint::new(OrdFloat::from(hi), true),
+            err,
+        }
     }
 
     pub fn f64_assign(&mut self, value: f64) {

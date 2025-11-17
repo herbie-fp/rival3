@@ -39,7 +39,7 @@ Total: 5.2 µs
   * `mpfr.rs`: Unsafe wrappers around MPFR
 * Appears to be much faster than Racket Rival:
   * 3-5x faster for complex, MPFR dominant computations (I suspect Racket has some heavy MPFR FFI costs)
-  * >30x faster for smaller, Racket runtime dominant computations
+  * \>30x faster for smaller, Racket runtime dominant computations
 * A number of TODO comments are spread throughout the code (mostly about efficiency)
 * I ran both the Racket Rival and Rust Rival on a large portion of `points.json` (from Racket Rival's `infra/`) and compared machine state per iteration. Observations:
   * Compared per iteration precisions, repeats, etc.

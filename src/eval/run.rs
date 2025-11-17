@@ -214,8 +214,7 @@ impl<D: Discretization> Machine<D> {
             let value = &self.state.registers[root];
             if value.err.total {
                 bad = true;
-            }
-            if value.err.partial {
+            } else if value.err.partial {
                 good = false;
             }
             let lo = self.disc.convert(idx, value.lo.as_float());
