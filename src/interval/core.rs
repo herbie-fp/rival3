@@ -1,7 +1,6 @@
 //! Core interval operations
 
 use super::value::{Endpoint, ErrorFlags, Ival, IvalClass, classify};
-use crate::mpfr::mpfr_get_exp;
 use crate::mpfr::{
     acosh_overflow_threshold, exp_overflow_threshold, exp2_overflow_threshold, inf, mpfr_abs,
     mpfr_acos, mpfr_acosh, mpfr_asin, mpfr_asinh, mpfr_atan, mpfr_atan2, mpfr_atanh, mpfr_cbrt,
@@ -23,6 +22,7 @@ impl Ival {
     {
         self.lo.immovable = endpoint_unary(mpfr_func, &a.lo, self.lo.as_float_mut(), Round::Down);
         self.hi.immovable = endpoint_unary(mpfr_func, &a.hi, self.hi.as_float_mut(), Round::Up);
+        self.err = a.err;
     }
 
     pub fn comonotonic_assign<F>(&mut self, mpfr_func: &F, a: &Ival)
@@ -31,6 +31,7 @@ impl Ival {
     {
         self.lo.immovable = endpoint_unary(mpfr_func, &a.hi, self.lo.as_float_mut(), Round::Down);
         self.hi.immovable = endpoint_unary(mpfr_func, &a.lo, self.hi.as_float_mut(), Round::Up);
+        self.err = a.err;
     }
 
     pub fn overflows_loose_at(&mut self, a: &Ival, lo: Float, hi: Float) {
@@ -189,25 +190,7 @@ impl Ival {
 
         let mut tmp = Ival::zero(self.prec());
         tmp.log2_assign(&abs_a);
-        self.err = tmp.err;
-
-        let lo = abs_a.lo.as_float();
-        let hi = abs_a.hi.as_float();
-
-        if lo.is_zero() || hi.is_zero() || lo.is_nan() || hi.is_nan() {
-            self.floor_assign(&tmp);
-            return;
-        }
-
-        let prec = self.prec();
-        let lo_exp = mpfr_get_exp(lo) - 1;
-        let hi_exp = mpfr_get_exp(hi) - 1;
-
-        self.lo.as_float_mut().assign(Float::with_val(prec, lo_exp));
-        self.hi.as_float_mut().assign(Float::with_val(prec, hi_exp));
-
-        self.lo.immovable = abs_a.lo.immovable;
-        self.hi.immovable = abs_a.hi.immovable;
+        self.floor_assign(&tmp);
     }
 
     pub fn asin_assign(&mut self, a: &Ival) {

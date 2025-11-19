@@ -5,9 +5,9 @@ use itertools::{enumerate, izip};
 use crate::eval::{
     execute,
     machine::{Discretization, Hint, Machine},
+    profile::Execution,
 };
 use crate::interval::Ival;
-use crate::profile::Execution;
 
 impl<D: Discretization> Machine<D> {
     /// Evaluate the machine with given inputs until convergence or the iteration limit
@@ -49,7 +49,9 @@ impl<D: Discretization> Machine<D> {
             "hint length mismatch"
         );
         self.state.iteration = iteration;
-        self.adjust(hints);
+        if self.adjust(hints) {
+            return Err(RivalError::Unsamplable);
+        }
         self.run_with_hint(hints);
         self.collect_outputs()
     }

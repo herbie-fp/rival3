@@ -20,3 +20,6 @@ indexmap = "2.12"
 itertools = "0.14.0"
 thiserror = "1"
 ascii_table = "4.0"
+
+[profile.release]
+lto = true

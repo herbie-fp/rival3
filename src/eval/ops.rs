@@ -80,7 +80,11 @@ def_ops! {
             optimize: |arg| {
                 // exp(log(x)) => x
                 if let Log(x) = arg {
-                    *x
+                    If(
+                        Box::new(Gt(x.clone(), Box::new(Literal(0.0)))),
+                        x.clone(),
+                        Box::new(Literal(f64::NAN)),
+                    )
                 } else {
                     Exp(Box::new(arg))
                 }
@@ -95,6 +99,17 @@ def_ops! {
                     ctx.minlog(inp, true)
                 } else { 0 };
                 AmplBounds::new(upper, lower)
+            },
+            optimize: |arg| {
+                if let Log2(x) = &arg {
+                    If(
+                        Box::new(Gt(x.clone(), Box::new(Literal(0.0)))),
+                        x.clone(),
+                        Box::new(Literal(f64::NAN)),
+                    )
+                } else {
+                    Exp2(Box::new(arg))
+                }
             },
         },
 
@@ -548,6 +563,17 @@ def_ops! {
                 }
 
                 match base {
+                    // pow(10, log10(x)) => x
+                    Literal(base_val) if (base_val - 10.0).abs() == 0.0 => {
+                        match exp {
+                            Log10(x) => If(
+                                Box::new(Gt(x.clone(), Box::new(Literal(0.0)))),
+                                x,
+                                Box::new(Literal(f64::NAN)),
+                            ),
+                            _ => Pow(Box::new(Literal(base_val)), Box::new(exp)),
+                        }
+                    }
                     // pow(2, arg) => exp2(arg)
                     Literal(base_val) if (base_val - 2.0).abs() == 0.0 => {
                         Exp2(Box::new(exp))
@@ -575,13 +601,9 @@ def_ops! {
 
         Hypot: {
             method: hypot_assign,
-            bounds: |ctx, out, x, y| {
-                let output_min = ctx.minlog(out, false);
-                let x_upper = ctx.maxlog(x, false) - output_min;
-                let y_upper = ctx.maxlog(y, false) - output_min;
-                let x_lower = if ctx.lower_bound_early_stopping { ctx.minlog(x, true) - ctx.maxlog(out, true) } else { 0 };
-                let y_lower = if ctx.lower_bound_early_stopping { ctx.minlog(y, true) - ctx.maxlog(out, true) } else { 0 };
-                (AmplBounds::new(x_upper, x_lower), AmplBounds::new(y_upper, y_lower))
+            bounds: |ctx, _, _, _| {
+                let bounds = AmplBounds::new(get_slack(ctx.iteration, ctx.slack_unit), 0);
+                (bounds, bounds)
             },
         },
         Add: {
@@ -624,6 +646,16 @@ def_ops! {
                     (Literal(one), Exp(x)) if one == &1.0 => {
                         Neg(Box::new(Expm1(x.clone())))
                     }
+                    // (- 1 (erf x)) => erfc(x)
+                    (Literal(one), Erf(x)) if one == &1.0 => {
+                        Erfc(x.clone())
+                    }
+                    // (- (erf x) 1) => neg(erfc(x))
+                    (Erf(x), Literal(one)) if one == &1.0 => {
+                        Neg(Box::new(Erfc(x.clone())))
+                    }
+                    // (- x x) => 0
+                    (x, y) if x == y => Literal(0.0),
                     _ => Sub(Box::new(lhs), Box::new(rhs))
                 }
             },

@@ -2,7 +2,7 @@
 
 use crate::eval::instructions::{Instruction, InstructionData::*};
 use crate::eval::ops;
-use crate::interval::{Ival, ErrorFlags};
+use crate::interval::{ErrorFlags, Ival};
 use rug::{Assign, Float, Rational as RugRational, float::Round};
 
 /// Evaluate an instruction into its output register using the provided precision

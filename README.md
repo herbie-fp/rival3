@@ -33,6 +33,7 @@ Total: 5.2 µs
     * `ops.rs`: The operation registry using `def_ops!` (more on this below)
     * `run.rs`: Public Rival API
     * `tricks.rs`: More or less helper functions that are used when specifying amplification bounds in `ops.rs`
+    * `profile.rs`: Profiling
   * `interval/`
     * `value.rs`: Defines `Ival`, `Endpoint`, and `ErrorFlags`
     * Everything else is the same as `ops/*.rkt` in Racket Rival
@@ -47,7 +48,6 @@ Total: 5.2 µs
   * Final precisions are almost always the same, and in the cases where they differ, I believe it's a bug in the printing logic rather than a difference in the code
   * Rust Rival was noticeably faster
 * What's missing:
-  * Early stopping when we exceed max precision
   * Proper handling of rationals
     * Currently both the numerator and denominator are expressed as `u64`
     * Overflows when run on certain expressions in `jmatjs.fpcore` from the Herbie benchmark

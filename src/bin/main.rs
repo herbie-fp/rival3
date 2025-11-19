@@ -2,10 +2,10 @@ use ascii_table::{Align, AsciiTable};
 use rival::eval::{
     ast::Expr,
     machine::{Discretization, MachineBuilder},
+    profile::Execution,
     run::RivalError,
 };
 use rival::interval::Ival;
-use rival::profile::Execution;
 use rug::Float;
 use std::env;
 use std::fmt::Display;
@@ -25,6 +25,10 @@ impl Discretization for Fp64Discretization {
     fn distance(&self, _idx: usize, lo: &Float, hi: &Float) -> usize {
         let x = lo.to_f64();
         let y = hi.to_f64();
+        // Handle things like signed zeros (so that -0.0 == 0.0)
+        if x == y {
+            return 0;
+        }
         #[inline]
         fn ordinal64(v: f64) -> i64 {
             let bits = v.to_bits() as i64;
@@ -128,8 +132,8 @@ fn sexpr_to_expr(sexpr: SExpr, vars: &[String]) -> Result<Expr, String> {
             if vars.contains(&s) {
                 return Ok(Expr::Var(s));
             }
-            if let Some((num_str, den_str)) = s.split_once('/') {
-                if let (Ok(num_val), Ok(den_val)) = (num_str.parse::<i64>(), den_str.parse::<u64>())
+            if let Some((num_str, den_str)) = s.split_once('/')
+                && let (Ok(num_val), Ok(den_val)) = (num_str.parse::<i64>(), den_str.parse::<u64>())
                 {
                     let neg = num_val < 0;
                     let num = num_val.unsigned_abs();
@@ -139,7 +143,6 @@ fn sexpr_to_expr(sexpr: SExpr, vars: &[String]) -> Result<Expr, String> {
                         neg,
                     });
                 }
-            }
             s.parse::<f64>()
                 .map(Expr::Literal)
                 .or_else(|_| match s.to_uppercase().as_str() {

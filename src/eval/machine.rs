@@ -8,9 +8,11 @@ use super::{
     instructions::{Instruction, InstructionData},
 };
 use crate::{
-    eval::ops,
+    eval::{
+        ops,
+        profile::{Execution, Profiler},
+    },
     interval::Ival,
-    profile::{Execution, Profiler},
 };
 use indexmap::IndexMap;
 use rug::Float;

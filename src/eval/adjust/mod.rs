@@ -5,24 +5,24 @@ mod precision;
 
 use crate::eval::{
     machine::{Discretization, Hint, Machine},
+    profile::Execution,
     tricks::slack_bits,
 };
-use crate::profile::Execution;
 use path_reduction::{path_reduction, schedule_child};
 use precision::{precision_tuning, update_repeats};
 
 impl<D: Discretization> Machine<D> {
     /// Adjust precision and repeats using the backward tuning pass
-    pub fn adjust(&mut self, hints: &[Hint]) {
+    pub fn adjust(&mut self, hints: &[Hint]) -> bool {
         assert_eq!(
             hints.len(),
             self.state.instructions.len(),
             "hint length mismatch"
         );
         if self.state.iteration == 0 {
-            return;
+            return false;
         }
-        backward_pass(self, hints);
+        backward_pass(self, hints)
     }
 
     /// Compute hints indicating which instructions should be executed, skipped, or aliased
@@ -81,7 +81,7 @@ impl<D: Discretization> Machine<D> {
 }
 
 /// Compute required precision for each instruction by propagating from outputs to inputs
-fn backward_pass<D: Discretization>(machine: &mut Machine<D>, hints: &[Hint]) {
+fn backward_pass<D: Discretization>(machine: &mut Machine<D>, hints: &[Hint]) -> bool {
     let instruction_count = machine.state.instructions.len();
     let profiling = machine.state.profiling_enabled;
     let start_time = if profiling {
@@ -139,13 +139,15 @@ fn backward_pass<D: Discretization>(machine: &mut Machine<D>, hints: &[Hint]) {
 
     // Step 2: Precision tuning
     let mut min_bounds = vec![0u32; instruction_count];
-    precision_tuning(
+    if precision_tuning(
         machine,
         hints,
         &work_repeats,
         &mut new_precisions,
         &mut min_bounds,
-    );
+    ) {
+        return true;
+    }
 
     // Step 3: Update repeats based on new precisions
     let mut any_reevaluation = update_repeats(
@@ -163,13 +165,15 @@ fn backward_pass<D: Discretization>(machine: &mut Machine<D>, hints: &[Hint]) {
         // Reset and recalculate precisions for bumps mode
         new_precisions.fill(0);
         work_repeats.fill(false);
-        precision_tuning(
+        if precision_tuning(
             machine,
             hints,
             &work_repeats,
             &mut new_precisions,
             &mut min_bounds,
-        );
+        ) {
+            return true;
+        }
         any_reevaluation = update_repeats(
             machine,
             &mut work_repeats,
@@ -195,4 +199,5 @@ fn backward_pass<D: Discretization>(machine: &mut Machine<D>, hints: &[Hint]) {
             iteration: machine.state.iteration,
         });
     }
+    false
 }
