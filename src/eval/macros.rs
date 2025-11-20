@@ -58,9 +58,9 @@ macro_rules! def_ops {
             /// Variable reference
             Var(String),
             /// Literal value
-            Literal(f64),
-            /// Rational value with sign flag and positive denominator
-            Rational { num: u128, den: u128, neg: bool },
+            Literal(rug::Float),
+            /// Rational value
+            Rational(rug::Rational),
 
             // Constants
             $( $const_name, )*
@@ -384,10 +384,10 @@ macro_rules! def_ops {
             }
 
             match expr {
-                Expr::Var(name) => *var_lookup.get(name.as_str()).expect("Unknown variable"),
-                Expr::Literal(value) => add_instruction($crate::eval::instructions::InstructionData::literal(*value), nodes, current_reg),
-                Expr::Rational { num, den, neg } => add_instruction(
-                    $crate::eval::instructions::InstructionData::Rational { num: *num, den: *den, neg: *neg },
+                Expr::Var(name) => *var_lookup.get(name.as_str()).expect(&format!("Unknown variable: {}", name)),
+                Expr::Literal(value) => add_instruction($crate::eval::instructions::InstructionData::literal(value.clone()), nodes, current_reg),
+                Expr::Rational(val) => add_instruction(
+                    $crate::eval::instructions::InstructionData::rational(val.clone()),
                     nodes,
                     current_reg,
                 ),
@@ -461,7 +461,7 @@ macro_rules! def_ops {
                 )*
 
                 // Leaves
-                leaf @ (Expr::Var(_) | Expr::Literal(_) | Expr::Rational { .. } $( | Expr::$const_name )*) => leaf,
+                leaf @ (Expr::Var(_) | Expr::Literal(_) | Expr::Rational(_) $( | Expr::$const_name )*) => leaf,
             }
         }
     };

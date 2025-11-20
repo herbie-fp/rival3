@@ -15,10 +15,11 @@ path = "src/bin/main.rs"
 rug = { version = "1.24", features = ["float"] }
 gmp-mpfr-sys = "1.6"
 rand = "0.9"
-ordered-float = "5.0"
 indexmap = "2.12"
+# TODO: remove
 itertools = "0.14.0"
 thiserror = "1"
+# todo: make bin dependency
 ascii_table = "4.0"
 
 [profile.release]

@@ -3,7 +3,7 @@
 use crate::eval::instructions::{Instruction, InstructionData::*};
 use crate::eval::ops;
 use crate::interval::{ErrorFlags, Ival};
-use rug::{Assign, Float, Rational as RugRational, float::Round};
+use rug::{Assign, Float, float::Round};
 
 /// Evaluate an instruction into its output register using the provided precision
 pub fn evaluate_instruction(instruction: &Instruction, registers: &mut [Ival], precision: u32) {
@@ -26,13 +26,20 @@ pub fn evaluate_instruction(instruction: &Instruction, registers: &mut [Ival], p
     };
 
     match &instruction.data {
-        Literal { value } => out_reg.f64_assign(f64::from(*value)),
-        // TODO: Precompute point rationals?
-        Rational { num, den, neg } => {
+        Literal { value } => {
             let prec = out_reg.prec();
-            let rat = RugRational::from(((if *neg { -1 } else { 1 }) * (*num as i64), *den));
-            let lo = Float::with_val_round(prec, &rat, Round::Down).0;
-            let hi = Float::with_val_round(prec, &rat, Round::Up).0;
+            let val = &value.0;
+            let lo = Float::with_val_round(prec, val, Round::Down).0;
+            let hi = Float::with_val_round(prec, val, Round::Up).0;
+            out_reg.lo.as_float_mut().assign(&lo);
+            out_reg.hi.as_float_mut().assign(&hi);
+            out_reg.err = ErrorFlags::none();
+        }
+        Rational { val } => {
+            let prec = out_reg.prec();
+            let rat = &val.0;
+            let lo = Float::with_val_round(prec, rat, Round::Down).0;
+            let hi = Float::with_val_round(prec, rat, Round::Up).0;
             out_reg.lo.as_float_mut().assign(&lo);
             out_reg.hi.as_float_mut().assign(&hi);
             out_reg.err = ErrorFlags::none();

@@ -4,6 +4,7 @@ use crate::def_ops;
 use crate::eval::adjust::path_reduction;
 use crate::eval::tricks::{AmplBounds, TrickContext, crosses_zero, get_slack};
 use crate::interval::Ival;
+use rug::Float;
 use Expr::*;
 
 def_ops! {
@@ -49,12 +50,12 @@ def_ops! {
                             Hypot(x1.clone(), y1.clone())
                         }
                         // sqrt(x^2 + 1)
-                        (Mul(x1, x2), Literal(one)) if x1 == x2 && one == &1.0 => {
-                            Hypot(x1.clone(), Box::new(Literal(*one)))
+                        (Mul(x1, x2), Literal(one)) if x1 == x2 && *one == 1.0 => {
+                            Hypot(x1.clone(), Box::new(Literal(one.clone())))
                         }
                         // sqrt(1 + x^2)
-                        (Literal(one), Mul(x1, x2)) if x1 == x2 && one == &1.0 => {
-                            Hypot(Box::new(Literal(*one)), x1.clone())
+                        (Literal(one), Mul(x1, x2)) if x1 == x2 && *one == 1.0 => {
+                            Hypot(Box::new(Literal(one.clone())), x1.clone())
                         }
                         _ => Sqrt(Box::new(Add(a, b))),
                     },
@@ -81,9 +82,9 @@ def_ops! {
                 // exp(log(x)) => x
                 if let Log(x) = arg {
                     If(
-                        Box::new(Gt(x.clone(), Box::new(Literal(0.0)))),
+                        Box::new(Gt(x.clone(), Box::new(Literal(Float::with_val(53, 0.0))))),
                         x.clone(),
-                        Box::new(Literal(f64::NAN)),
+                        Box::new(Literal(Float::with_val(53, f64::NAN))),
                     )
                 } else {
                     Exp(Box::new(arg))
@@ -103,9 +104,9 @@ def_ops! {
             optimize: |arg| {
                 if let Log2(x) = &arg {
                     If(
-                        Box::new(Gt(x.clone(), Box::new(Literal(0.0)))),
+                        Box::new(Gt(x.clone(), Box::new(Literal(Float::with_val(53, 0.0))))),
                         x.clone(),
-                        Box::new(Literal(f64::NAN)),
+                        Box::new(Literal(Float::with_val(53, f64::NAN))),
                     )
                 } else {
                     Exp2(Box::new(arg))
@@ -138,8 +139,8 @@ def_ops! {
                     Exp(x) => *x,
                     // log(1 + x) or log(x + 1) => log1p(x)
                     Add(a, b) => match (&*a, &*b) {
-                        (Literal(one), x) if one == &1.0 => Log1p(Box::new(x.clone())),
-                        (x, Literal(one)) if one == &1.0 => Log1p(Box::new(x.clone())),
+                        (Literal(one), x) if *one == 1.0 => Log1p(Box::new(x.clone())),
+                        (x, Literal(one)) if *one == 1.0 => Log1p(Box::new(x.clone())),
                         _ => Log(Box::new(Add(a, b))),
                     },
                     other => Log(Box::new(other)),
@@ -201,9 +202,9 @@ def_ops! {
                 match arg {
                     // sin(PI * (x / n))
                     Mul(a, b) if matches!(&*a, Pi) => match &*b {
-                        Div(x, n) => if let Literal(nval) = **n {
-                            let i = nval as u64;
-                            if i as f64 == nval && i > 0 {
+                        Div(x, n) => if let Literal(nval) = &**n {
+                            let i = nval.to_f64() as u64;
+                            if i as f64 == nval.to_f64() && i > 0 {
                                 return Sinu(2 * i, x.clone());
                             }
                             Sin(Box::new(Mul(a, b)))
@@ -215,9 +216,9 @@ def_ops! {
                     },
                     // sin((x / n) * PI) or sin(x * PI)
                     Mul(a, b) if matches!(&*b, Pi) => match &*a {
-                        Div(x, n) => if let Literal(nval) = **n {
-                            let i = nval as u64;
-                            if i as f64 == nval && i > 0 {
+                        Div(x, n) => if let Literal(nval) = &**n {
+                            let i = nval.to_f64() as u64;
+                            if i as f64 == nval.to_f64() && i > 0 {
                                 return Sinu(2 * i, x.clone());
                             }
                             Sin(Box::new(Mul(a, b)))
@@ -249,9 +250,9 @@ def_ops! {
                 match arg {
                     // cos(PI * (x / n))
                     Mul(a, b) if matches!(&*a, Pi) => match &*b {
-                        Div(x, n) => if let Literal(nval) = **n {
-                            let i = nval as u64;
-                            if i as f64 == nval && i > 0 {
+                        Div(x, n) => if let Literal(nval) = &**n {
+                            let i = nval.to_f64() as u64;
+                            if i as f64 == nval.to_f64() && i > 0 {
                                 return Cosu(2 * i, x.clone());
                             }
                             Cos(Box::new(Mul(a, b)))
@@ -263,9 +264,9 @@ def_ops! {
                     },
                     // cos((x / n) * PI) or cos(x * PI)
                     Mul(a, b) if matches!(&*b, Pi) => match &*a {
-                        Div(x, n) => if let Literal(nval) = **n {
-                            let i = nval as u64;
-                            if i as f64 == nval && i > 0 {
+                        Div(x, n) => if let Literal(nval) = &**n {
+                            let i = nval.to_f64() as u64;
+                            if i as f64 == nval.to_f64() && i > 0 {
                                 return Cosu(2 * i, x.clone());
                             }
                             Cos(Box::new(Mul(a, b)))
@@ -304,9 +305,9 @@ def_ops! {
                 match arg {
                     // tan(PI * (x / n))
                     Mul(a, b) if matches!(&*a, Pi) => match &*b {
-                        Div(x, n) => if let Literal(nval) = **n {
-                            let i = nval as u64;
-                            if i as f64 == nval && i > 0 {
+                        Div(x, n) => if let Literal(nval) = &**n {
+                            let i = nval.to_f64() as u64;
+                            if i as f64 == nval.to_f64() && i > 0 {
                                 return Tanu(2 * i, x.clone());
                             }
                             Tan(Box::new(Mul(a, b)))
@@ -318,9 +319,9 @@ def_ops! {
                     },
                     // tan((x / n) * PI) or tan(x * PI)
                     Mul(a, b) if matches!(&*b, Pi) => match &*a {
-                        Div(x, n) => if let Literal(nval) = **n {
-                            let i = nval as u64;
-                            if i as f64 == nval && i > 0 {
+                        Div(x, n) => if let Literal(nval) = &**n {
+                            let i = nval.to_f64() as u64;
+                            if i as f64 == nval.to_f64() && i > 0 {
                                 return Tanu(2 * i, x.clone());
                             }
                             Tan(Box::new(Mul(a, b)))
@@ -533,30 +534,32 @@ def_ops! {
                 (AmplBounds::new(upper_x, lower_x), AmplBounds::new(upper_y, lower_y))
             },
             optimize: |base, exp| {
-                if let Literal(exp_val) = exp {
+                if let Literal(exp_val) = &exp {
                     // pow(arg, 2) => pow2(arg)
-                    if (exp_val - 2.0).abs() == 0.0 {
+                    if (exp_val.to_f64() - 2.0).abs() == 0.0 {
                         return Pow2(Box::new(base));
                     }
                     // pow(arg, 0.5) => sqrt(arg)
-                    if (exp_val - 0.5).abs() == 0.0 {
+                    if (exp_val.to_f64() - 0.5).abs() == 0.0 {
                         return Sqrt(Box::new(base));
                     }
                 }
 
                 // pow(x, p/q) optimizations
-                if let Rational { num, den, neg } = &exp {
+                if let Rational(rat) = &exp {
+                    let num = rat.numer();
+                    let den = rat.denom();
                     if *den == 1 {
-                        return Pow(Box::new(base), Box::new(Rational { num: *num, den:*den, neg:*neg }));
+                        return Pow(Box::new(base), Box::new(Rational(rat.clone())));
                     }
-                    let den_odd = den % 2 == 1;
-                    let num_odd = num % 2 == 1;
+                    let den_odd = den.is_odd();
+                    let num_odd = num.is_odd();
                     if den_odd && !num_odd {
-                        return Pow(Box::new(Fabs(Box::new(base))), Box::new(Rational { num: *num, den: *den, neg: *neg }));
+                        return Pow(Box::new(Fabs(Box::new(base))), Box::new(Rational(rat.clone())));
                     }
                     if den_odd && num_odd {
                         return Copysign(
-                            Box::new(Pow(Box::new(Fabs(Box::new(base.clone()))), Box::new(Rational { num: *num, den: *den, neg: *neg }))),
+                            Box::new(Pow(Box::new(Fabs(Box::new(base.clone()))), Box::new(Rational(rat.clone())))),
                             Box::new(base),
                         );
                     }
@@ -564,18 +567,18 @@ def_ops! {
 
                 match base {
                     // pow(10, log10(x)) => x
-                    Literal(base_val) if (base_val - 10.0).abs() == 0.0 => {
+                    Literal(base_val) if (base_val.to_f64() - 10.0).abs() == 0.0 => {
                         match exp {
                             Log10(x) => If(
-                                Box::new(Gt(x.clone(), Box::new(Literal(0.0)))),
+                                Box::new(Gt(x.clone(), Box::new(Literal(Float::with_val(53, 0.0))))),
                                 x,
-                                Box::new(Literal(f64::NAN)),
+                                Box::new(Literal(Float::with_val(53, f64::NAN))),
                             ),
-                            _ => Pow(Box::new(Literal(base_val)), Box::new(exp)),
+                            _ => Pow(Box::new(Literal(base_val.clone())), Box::new(exp)),
                         }
                     }
                     // pow(2, arg) => exp2(arg)
-                    Literal(base_val) if (base_val - 2.0).abs() == 0.0 => {
+                    Literal(base_val) if (base_val.to_f64() - 2.0).abs() == 0.0 => {
                         Exp2(Box::new(exp))
                     }
                     // pow(E, arg) => exp(arg)
@@ -647,15 +650,15 @@ def_ops! {
                         Neg(Box::new(Expm1(x.clone())))
                     }
                     // (- 1 (erf x)) => erfc(x)
-                    (Literal(one), Erf(x)) if one == &1.0 => {
+                    (Literal(one), Erf(x)) if *one == 1.0 => {
                         Erfc(x.clone())
                     }
                     // (- (erf x) 1) => neg(erfc(x))
-                    (Erf(x), Literal(one)) if one == &1.0 => {
+                    (Erf(x), Literal(one)) if *one == 1.0 => {
                         Neg(Box::new(Erfc(x.clone())))
                     }
                     // (- x x) => 0
-                    (x, y) if x == y => Literal(0.0),
+                    (x, y) if x == y => Literal(Float::with_val(53, 0.0)),
                     _ => Sub(Box::new(lhs), Box::new(rhs))
                 }
             },

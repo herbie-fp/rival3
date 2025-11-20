@@ -6,7 +6,7 @@ use rival::eval::{
     run::RivalError,
 };
 use rival::interval::Ival;
-use rug::Float;
+use rug::{Assign, Float, Rational};
 use std::env;
 use std::fmt::Display;
 
@@ -119,15 +119,13 @@ fn parse_vars(s: &str) -> Result<Vec<String>, String> {
     }
 }
 
-fn parse_values(s: &str) -> Result<Vec<f64>, String> {
+fn parse_values(s: &str) -> Result<Vec<String>, String> {
     let sexpr = parse_sexpr(s)?;
     match sexpr {
         SExpr::List(items) => items
             .into_iter()
             .map(|item| match item {
-                SExpr::Atom(s) => s
-                    .parse::<f64>()
-                    .map_err(|_| format!("Invalid number: {}", s)),
+                SExpr::Atom(s) => Ok(s),
                 _ => Err("Value list must contain atoms".to_string()),
             })
             .collect(),
@@ -141,25 +139,17 @@ fn sexpr_to_expr(sexpr: SExpr, vars: &[String]) -> Result<Expr, String> {
             if vars.contains(&s) {
                 return Ok(Expr::Var(s));
             }
-            if let Some((num_str, den_str)) = s.split_once('/')
-                && let (Ok(num_val), Ok(den_val)) =
-                    (num_str.parse::<i128>(), den_str.parse::<u128>())
-            {
-                let neg = num_val < 0;
-                let num = num_val.unsigned_abs();
-                return Ok(Expr::Rational {
-                    num,
-                    den: den_val,
-                    neg,
-                });
+            if let Ok(rat) = s.parse::<Rational>() {
+                return Ok(Expr::Rational(rat));
             }
-            s.parse::<f64>()
-                .map(Expr::Literal)
-                .or_else(|_| match s.to_uppercase().as_str() {
-                    "PI" => Ok(Expr::Pi),
-                    "E" => Ok(Expr::E),
-                    _ => Err(format!("Unknown atom: {}", s)),
-                })
+            if let Ok(f) = Float::parse(&s) {
+                return Ok(Expr::Literal(Float::with_val(1024, f)));
+            }
+            match s.to_uppercase().as_str() {
+                "PI" => Ok(Expr::Pi),
+                "E" => Ok(Expr::E),
+                _ => Err(format!("Unknown atom: {}", s)),
+            }
         }
         SExpr::List(items) => {
             if items.is_empty() {
@@ -406,9 +396,21 @@ fn main() {
     let arg_prec = machine.disc.target().max(machine.state.min_precision);
     let arg_ivals: Vec<Ival> = values
         .iter()
-        .map(|&v| {
+        .map(|s| {
             let mut ival = Ival::zero(arg_prec);
-            ival.f64_assign(v);
+            if let Ok(rat) = s.parse::<Rational>() {
+                let f = Float::with_val(arg_prec, &rat);
+                ival.lo.as_float_mut().assign(&f);
+                ival.hi.as_float_mut().assign(&f);
+            } else if let Ok(f) = Float::parse(s) {
+                let f = Float::with_val(arg_prec, f);
+                ival.lo.as_float_mut().assign(&f);
+                ival.hi.as_float_mut().assign(&f);
+            } else if let Ok(v) = s.parse::<f64>() {
+                ival.f64_assign(v);
+            } else {
+                panic!("Invalid value: {}", s);
+            }
             ival
         })
         .collect();
