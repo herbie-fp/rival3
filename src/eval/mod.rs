@@ -1,15 +1,16 @@
 //! Interval expression evaluation pipeline
 
-pub mod adjust;
-pub mod execute;
-pub mod instructions;
 pub mod machine;
-pub mod macros;
-pub mod ops;
 pub mod profile;
 pub mod run;
-pub mod tricks;
 
 pub mod ast {
     pub use super::ops::Expr;
 }
+
+pub(crate) mod adjust;
+pub(crate) mod execute;
+pub(crate) mod instructions;
+pub(crate) mod macros;
+pub(crate) mod ops;
+pub(crate) mod tricks;

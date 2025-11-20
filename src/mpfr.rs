@@ -38,22 +38,6 @@ macro_rules! mpfr_binary_op {
     };
 }
 
-macro_rules! mpfr_ternary_op {
-    ($name:ident, $func:path) => {
-        pub fn $name(a: &Float, b: &Float, c: &Float, out: &mut Float, rnd: Round) -> bool {
-            unsafe {
-                $func(
-                    out.as_raw_mut(),
-                    a.as_raw(),
-                    b.as_raw(),
-                    c.as_raw(),
-                    to_mpfr_round(rnd),
-                ) == 0
-            }
-        }
-    };
-}
-
 // Mutating operations
 
 // Basic operations
@@ -107,14 +91,10 @@ mpfr_binary_op!(mpfr_div, mpfr::div);
 mpfr_binary_op!(mpfr_min, mpfr::min);
 mpfr_binary_op!(mpfr_max, mpfr::max);
 mpfr_binary_op!(mpfr_atan2, mpfr::atan2);
-mpfr_binary_op!(mpfr_copysign, mpfr::copysign);
 mpfr_binary_op!(mpfr_pow, mpfr::pow);
 mpfr_binary_op!(mpfr_hypot, mpfr::hypot);
 mpfr_binary_op!(mpfr_fmod, mpfr::fmod);
 mpfr_binary_op!(mpfr_remainder, mpfr::remainder);
-
-// Ternary operations
-mpfr_ternary_op!(mpfr_fma, mpfr::fma);
 
 pub fn mpfr_cosu(x: &Float, n: u64, out: &mut Float, rnd: Round) -> bool {
     unsafe { mpfr::cosu(out.as_raw_mut(), x.as_raw(), n, to_mpfr_round(rnd)) == 0 }
@@ -172,10 +152,6 @@ pub fn mpfr_floor(input: &Float, out: &mut Float, _rnd: Round) -> bool {
     unsafe { mpfr::floor(out.as_raw_mut(), input.as_raw()) == 0 }
 }
 
-pub fn mpfr_ceil_inplace(x: &mut Float) -> bool {
-    unsafe { mpfr::ceil(x.as_raw_mut(), x.as_raw()) == 0 }
-}
-
 pub fn mpfr_ceil(input: &Float, out: &mut Float, _rnd: Round) -> bool {
     unsafe { mpfr::ceil(out.as_raw_mut(), input.as_raw()) == 0 }
 }
@@ -188,10 +164,6 @@ pub fn mpfr_round(input: &Float, out: &mut Float, _rnd: Round) -> bool {
     unsafe { mpfr::round(out.as_raw_mut(), input.as_raw()) == 0 }
 }
 
-pub fn mpfr_trunc_inplace(x: &mut Float) -> bool {
-    unsafe { mpfr::trunc(x.as_raw_mut(), x.as_raw()) == 0 }
-}
-
 pub fn mpfr_trunc(input: &Float, out: &mut Float, _rnd: Round) -> bool {
     unsafe { mpfr::trunc(out.as_raw_mut(), input.as_raw()) == 0 }
 }
@@ -202,18 +174,6 @@ pub fn mpfr_cmpabs(x: &Float, y: &Float) -> i32 {
 
 pub fn mpfr_sign(x: &Float) -> i32 {
     unsafe { mpfr::sgn(x.as_raw()) }
-}
-
-pub fn mpfr_nextbelow(out: &mut Float) {
-    unsafe {
-        mpfr::nextbelow(out.as_raw_mut());
-    }
-}
-
-pub fn mpfr_nextabove(out: &mut Float) {
-    unsafe {
-        mpfr::nextabove(out.as_raw_mut());
-    }
 }
 
 // Non-mutating functions

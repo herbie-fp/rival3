@@ -22,8 +22,8 @@ pub enum InstructionData {
         value: OrderedFloat<f64>,
     },
     Rational {
-        num: u64,
-        den: u64,
+        num: u128,
+        den: u128,
         neg: bool,
     },
     Constant {

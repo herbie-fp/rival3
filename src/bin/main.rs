@@ -29,13 +29,14 @@ impl Discretization for Fp64Discretization {
         if x == y {
             return 0;
         }
-        #[inline]
-        fn ordinal64(v: f64) -> i64 {
+
+        let to_ordinal = |v: f64| -> i64 {
             let bits = v.to_bits() as i64;
             if bits < 0 { !bits } else { bits }
-        }
-        let ox = ordinal64(x);
-        let oy = ordinal64(y);
+        };
+
+        let ox = to_ordinal(x);
+        let oy = to_ordinal(y);
         oy.wrapping_sub(ox).unsigned_abs() as usize
     }
 }
@@ -47,41 +48,45 @@ enum SExpr {
 
 fn parse_sexpr(s: &str) -> Result<SExpr, String> {
     let mut chars = s.trim().chars().peekable();
-    parse_sexpr_inner(&mut chars)
+    let res = parse_sexpr_inner(&mut chars)?;
+    if chars.peek().is_some() {
+        return Err("Trailing characters after S-expression".to_string());
+    }
+    Ok(res)
 }
 
 fn parse_sexpr_inner<I: Iterator<Item = char>>(
     chars: &mut std::iter::Peekable<I>,
 ) -> Result<SExpr, String> {
-    while let Some(&c) = chars.peek() {
-        if c.is_whitespace() {
-            chars.next();
-            continue;
-        }
-        if c == '(' {
-            chars.next();
+    // Skip whitespace
+    while chars.peek().map_or(false, |c| c.is_whitespace()) {
+        chars.next();
+    }
+
+    match chars.peek() {
+        Some('(') => {
+            chars.next(); // consume '('
             let mut list = Vec::new();
             loop {
-                while let Some(&c) = chars.peek() {
-                    if c.is_whitespace() {
-                        chars.next();
-                    } else {
-                        break;
-                    }
+                // Skip whitespace inside list
+                while chars.peek().map_or(false, |c| c.is_whitespace()) {
+                    chars.next();
                 }
-                if let Some(&c) = chars.peek() {
-                    if c == ')' {
-                        chars.next();
+
+                match chars.peek() {
+                    Some(')') => {
+                        chars.next(); // consume ')'
                         return Ok(SExpr::List(list));
                     }
-                    list.push(parse_sexpr_inner(chars)?);
-                } else {
-                    return Err("Unexpected end of input".to_string());
+                    Some(_) => {
+                        list.push(parse_sexpr_inner(chars)?);
+                    }
+                    None => return Err("Unclosed parenthesis".to_string()),
                 }
             }
-        } else if c == ')' {
-            return Err("Unexpected )".to_string());
-        } else {
+        }
+        Some(')') => Err("Unexpected closing parenthesis".to_string()),
+        Some(_) => {
             let mut atom = String::new();
             while let Some(&c) = chars.peek() {
                 if c.is_whitespace() || c == '(' || c == ')' {
@@ -90,10 +95,14 @@ fn parse_sexpr_inner<I: Iterator<Item = char>>(
                 atom.push(c);
                 chars.next();
             }
-            return Ok(SExpr::Atom(atom));
+            if atom.is_empty() {
+                Err("Unexpected end of input".to_string())
+            } else {
+                Ok(SExpr::Atom(atom))
+            }
         }
+        None => Err("Unexpected end of input".to_string()),
     }
-    Err("Unexpected end of input".to_string())
 }
 
 fn parse_vars(s: &str) -> Result<Vec<String>, String> {
@@ -133,16 +142,17 @@ fn sexpr_to_expr(sexpr: SExpr, vars: &[String]) -> Result<Expr, String> {
                 return Ok(Expr::Var(s));
             }
             if let Some((num_str, den_str)) = s.split_once('/')
-                && let (Ok(num_val), Ok(den_val)) = (num_str.parse::<i64>(), den_str.parse::<u64>())
-                {
-                    let neg = num_val < 0;
-                    let num = num_val.unsigned_abs();
-                    return Ok(Expr::Rational {
-                        num,
-                        den: den_val,
-                        neg,
-                    });
-                }
+                && let (Ok(num_val), Ok(den_val)) =
+                    (num_str.parse::<i128>(), den_str.parse::<u128>())
+            {
+                let neg = num_val < 0;
+                let num = num_val.unsigned_abs();
+                return Ok(Expr::Rational {
+                    num,
+                    den: den_val,
+                    neg,
+                });
+            }
             s.parse::<f64>()
                 .map(Expr::Literal)
                 .or_else(|_| match s.to_uppercase().as_str() {

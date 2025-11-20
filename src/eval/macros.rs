@@ -1,5 +1,6 @@
 //! Macro for defining interval operations and generated helpers
 //! Provides enums, dispatch, optimization, and path reduction wiring
+//! TODO: Split up this macro to make it easier to use/extend
 #[macro_export]
 macro_rules! def_ops {
     (
@@ -59,7 +60,7 @@ macro_rules! def_ops {
             /// Literal value
             Literal(f64),
             /// Rational value with sign flag and positive denominator
-            Rational { num: u64, den: u64, neg: bool },
+            Rational { num: u128, den: u128, neg: bool },
 
             // Constants
             $( $const_name, )*

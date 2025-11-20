@@ -446,25 +446,6 @@ pub fn endpoint_binary(
 }
 
 #[must_use]
-pub fn endpoint_ternary(
-    f: impl FnOnce(&Float, &Float, &Float, &mut Float, Round) -> bool,
-    ep1: &Endpoint,
-    ep2: &Endpoint,
-    ep3: &Endpoint,
-    out: &mut Float,
-    rnd: Round,
-) -> bool {
-    let v1 = ep1.as_float();
-    let v2 = ep2.as_float();
-    let v3 = ep3.as_float();
-    let exact = f(v1, v2, v3, out, rnd);
-    (ep1.immovable && v1.is_infinite())
-        || (ep2.immovable && v2.is_infinite())
-        || (ep3.immovable && v3.is_infinite())
-        || (ep1.immovable && ep2.immovable && ep3.immovable && exact)
-}
-
-#[must_use]
 pub fn endpoint_minmax(
     f: impl FnOnce(&Float, &Float, &mut Float, Round) -> bool,
     ep1: &Endpoint,

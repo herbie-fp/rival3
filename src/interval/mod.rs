@@ -7,4 +7,4 @@ pub mod pow;
 pub mod trig;
 pub mod value;
 
-pub use value::{Endpoint, ErrorFlags, Ival, IvalClass, classify};
+pub use value::{Endpoint, ErrorFlags, Ival};
