@@ -3,7 +3,8 @@
 use crate::eval::instructions::{Instruction, InstructionData::*};
 use crate::eval::ops;
 use crate::interval::{ErrorFlags, Ival};
-use rug::{Assign, Float, float::Round};
+use rug::float::Round;
+use rug::ops::AssignRound;
 
 /// Evaluate an instruction into its output register using the provided precision
 pub fn evaluate_instruction(instruction: &Instruction, registers: &mut [Ival], precision: u32) {
@@ -27,21 +28,15 @@ pub fn evaluate_instruction(instruction: &Instruction, registers: &mut [Ival], p
 
     match &instruction.data {
         Literal { value } => {
-            let prec = out_reg.prec();
             let val = &value.0;
-            let lo = Float::with_val_round(prec, val, Round::Down).0;
-            let hi = Float::with_val_round(prec, val, Round::Up).0;
-            out_reg.lo.as_float_mut().assign(&lo);
-            out_reg.hi.as_float_mut().assign(&hi);
+            out_reg.lo.as_float_mut().assign_round(val, Round::Down);
+            out_reg.hi.as_float_mut().assign_round(val, Round::Up);
             out_reg.err = ErrorFlags::none();
         }
         Rational { val } => {
-            let prec = out_reg.prec();
             let rat = &val.0;
-            let lo = Float::with_val_round(prec, rat, Round::Down).0;
-            let hi = Float::with_val_round(prec, rat, Round::Up).0;
-            out_reg.lo.as_float_mut().assign(&lo);
-            out_reg.hi.as_float_mut().assign(&hi);
+            out_reg.lo.as_float_mut().assign_round(rat, Round::Down);
+            out_reg.hi.as_float_mut().assign_round(rat, Round::Up);
             out_reg.err = ErrorFlags::none();
         }
         Constant { op } => ops::execute_constant(*op, out_reg),
