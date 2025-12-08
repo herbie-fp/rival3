@@ -4,8 +4,8 @@ use crate::def_ops;
 use crate::eval::adjust::path_reduction;
 use crate::eval::tricks::{AmplBounds, TrickContext, crosses_zero, get_slack};
 use crate::interval::Ival;
-use rug::Float;
 use Expr::*;
+use rug::Float;
 
 def_ops! {
     constant {

@@ -22,7 +22,7 @@ impl<D: Discretization> Machine<D> {
         let hint_slice: &[Hint] = if let Some(h) = hint {
             h
         } else {
-            hint_storage = self.state.default_hint.clone();
+            hint_storage = self.default_hint.clone();
             &hint_storage
         };
 
@@ -43,12 +43,8 @@ impl<D: Discretization> Machine<D> {
         iteration: usize,
         hints: &[Hint],
     ) -> Result<Option<Vec<Ival>>, RivalError> {
-        assert_eq!(
-            hints.len(),
-            self.state.instructions.len(),
-            "hint length mismatch"
-        );
-        self.state.iteration = iteration;
+        assert_eq!(hints.len(), self.instructions.len(), "hint length mismatch");
+        self.iteration = iteration;
         if self.adjust(hints) {
             return Err(RivalError::Unsamplable);
         }
@@ -59,22 +55,22 @@ impl<D: Discretization> Machine<D> {
     /// Analyze an input rectangle and return status summary, next hints, and convergence flag
     pub fn analyze_with_hints(
         &mut self,
-        rect: Vec<Ival>,
+        rect: &[Ival],
         hint: Option<&[Hint]>,
     ) -> (Ival, Vec<Hint>, bool) {
-        self.load_arguments(&rect);
+        self.load_arguments(rect);
 
         // Use provided hint or default
         let tmp;
         let hint_slice = if let Some(h) = hint {
             h
         } else {
-            tmp = self.state.default_hint.clone();
+            tmp = self.default_hint.clone();
             &tmp
         };
 
         // One analysis iteration at sampling iteration 0
-        self.state.iteration = 0;
+        self.iteration = 0;
         self.adjust(hint_slice);
         self.run_with_hint(hint_slice);
 
@@ -86,46 +82,39 @@ impl<D: Discretization> Machine<D> {
     }
 
     /// Analyze a hyper-rectangle and return only the boolean interval status
-    pub fn analyze(&mut self, rect: Vec<Ival>) -> Ival {
+    pub fn analyze(&mut self, rect: &[Ival]) -> Ival {
         let (status, _hint, _conv) = self.analyze_with_hints(rect, None);
         status
     }
 
     /// Load argument intervals into the front of the register file
     pub fn load_arguments(&mut self, args: &[Ival]) {
-        assert_eq!(
-            args.len(),
-            self.state.arguments.len(),
-            "Argument count mismatch"
-        );
+        assert_eq!(args.len(), self.arguments.len(), "Argument count mismatch");
         for (i, arg) in args.iter().cloned().enumerate() {
-            self.state.registers[i] = arg;
+            self.registers[i] = arg;
         }
-        self.state.bumps = 0;
-        self.state.bumps_activated = false;
-        self.state.iteration = 0;
-        self.state.precisions.fill(0);
-        self.state.repeats.fill(false);
-        self.state.output_distance.fill(false);
-        if self.state.profiling_enabled {
-            self.state.profiler.reset();
+        self.bumps = 0;
+        self.bumps_activated = false;
+        self.iteration = 0;
+        self.precisions.fill(0);
+        self.repeats.fill(false);
+        self.output_distance.fill(false);
+        if self.profiling_enabled {
+            self.profiler.reset();
         }
     }
 
     /// Execute instructions once using the supplied precision and hint plan
     fn run_with_hint(&mut self, hints: &[Hint]) {
         // On the first iteration use the initial plan; subsequent iterations use tuned state
-        let (precisions, repeats) = if self.state.iteration == 0 {
-            (
-                &self.state.initial_precisions[..],
-                &self.state.initial_repeats[..],
-            )
+        let (precisions, repeats) = if self.iteration == 0 {
+            (&self.initial_precisions[..], &self.initial_repeats[..])
         } else {
-            (&self.state.precisions[..], &self.state.repeats[..])
+            (&self.precisions[..], &self.repeats[..])
         };
 
         for (idx, (instruction, &repeat, &precision, hint)) in
-            enumerate(izip!(&self.state.instructions, repeats, precisions, hints))
+            enumerate(izip!(&self.instructions, repeats, precisions, hints))
         {
             if repeat {
                 continue;
@@ -136,28 +125,20 @@ impl<D: Discretization> Machine<D> {
             match hint {
                 Hint::Skip => {}
                 Hint::Execute => {
-                    if self.state.profiling_enabled {
+                    if self.profiling_enabled {
                         let start = std::time::Instant::now();
-                        execute::evaluate_instruction(
-                            instruction,
-                            &mut self.state.registers,
-                            precision,
-                        );
+                        execute::evaluate_instruction(instruction, &mut self.registers, precision);
                         let dt = start.elapsed().as_secs_f64() * 1000.0;
                         let exec = Execution {
                             name: instruction.data.name_static(),
                             number: idx as i32,
                             precision,
                             time_ms: dt,
-                            iteration: self.state.iteration,
+                            iteration: self.iteration,
                         };
-                        self.state.profiler.record(exec);
+                        self.profiler.record(exec);
                     } else {
-                        execute::evaluate_instruction(
-                            instruction,
-                            &mut self.state.registers,
-                            precision,
-                        )
+                        execute::evaluate_instruction(instruction, &mut self.registers, precision)
                     }
                 }
                 // Path reduction aliasing the output of an instruction to one of its inputs
@@ -166,10 +147,10 @@ impl<D: Discretization> Machine<D> {
                         && src_reg != out_reg
                     {
                         let (src, dst) = if src_reg < out_reg {
-                            let (left, right) = self.state.registers.split_at_mut(out_reg);
+                            let (left, right) = self.registers.split_at_mut(out_reg);
                             (&left[src_reg], &mut right[0])
                         } else {
-                            let (left, right) = self.state.registers.split_at_mut(src_reg);
+                            let (left, right) = self.registers.split_at_mut(src_reg);
                             (&right[0], &mut left[out_reg])
                         };
                         dst.assign_from(src);
@@ -177,7 +158,7 @@ impl<D: Discretization> Machine<D> {
                 }
                 // Use pre-computed boolean value
                 Hint::KnownBool(value) => {
-                    self.state.registers[out_reg] = Ival::bool_interval(*value, *value);
+                    self.registers[out_reg] = Ival::bool_interval(*value, *value);
                 }
             }
         }
@@ -186,10 +167,10 @@ impl<D: Discretization> Machine<D> {
     /// Gather outputs and translate evaluation state into convergence results
     fn collect_outputs(&mut self) -> Result<Option<Vec<Ival>>, RivalError> {
         let (good, done, bad, stuck) = self.return_flags();
-        let mut outputs = Vec::with_capacity(self.state.outputs.len());
+        let mut outputs = Vec::with_capacity(self.outputs.len());
 
-        for &root in &self.state.outputs {
-            outputs.push(self.state.registers[root].clone());
+        for &root in &self.outputs {
+            outputs.push(self.registers[root].clone());
         }
 
         if bad {
@@ -212,8 +193,8 @@ impl<D: Discretization> Machine<D> {
         let mut bad = false;
         let mut stuck = false;
 
-        for (idx, &root) in self.state.outputs.iter().enumerate() {
-            let value = &self.state.registers[root];
+        for (idx, &root) in self.outputs.iter().enumerate() {
+            let value = &self.registers[root];
             if value.err.total {
                 bad = true;
             } else if value.err.partial {
@@ -222,7 +203,7 @@ impl<D: Discretization> Machine<D> {
             let lo = self.disc.convert(idx, value.lo.as_float());
             let hi = self.disc.convert(idx, value.hi.as_float());
             let dist = self.disc.distance(idx, &lo, &hi);
-            self.state.output_distance[idx] = dist == 1;
+            self.output_distance[idx] = dist == 1;
             if dist != 0 {
                 done = false;
                 if value.lo.immovable && value.hi.immovable {

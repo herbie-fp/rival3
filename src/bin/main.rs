@@ -391,9 +391,9 @@ fn main() {
     let mut machine = MachineBuilder::new(Fp64Discretization)
         .enable_profiling(true)
         .max_precision(10000)
-        .build(vec![expr], vars.clone());
+        .build(vec![expr], vars);
 
-    let arg_prec = machine.disc.target().max(machine.state.min_precision);
+    let arg_prec = machine.disc.target().max(machine.min_precision);
     let arg_ivals: Vec<Ival> = values
         .iter()
         .map(|s| {
@@ -422,7 +422,7 @@ fn main() {
     let result = machine.apply(&arg_ivals, None, 10);
     let total_time = start.elapsed().as_secs_f64() * 1000.0;
 
-    let execs: Vec<Execution> = machine.state.profiler.records().to_vec();
+    let execs: Vec<Execution> = machine.profiler.records().to_vec();
     let num_iterations = execs.iter().map(|e| e.iteration).max().unwrap_or(0) + 1;
     let num_instructions = machine.instruction_count();
 

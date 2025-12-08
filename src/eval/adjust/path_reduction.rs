@@ -39,7 +39,7 @@ where
         }
     };
 
-    match &machine.state.instructions[idx].data {
+    match &machine.instructions[idx].data {
         InstructionData::Unary { op, .. } => ops::path_reduce_unary(*op, machine, idx, mark),
         InstructionData::UnaryParam { op, .. } => {
             ops::path_reduce_unary_param(*op, machine, idx, mark)
@@ -75,11 +75,11 @@ where
     F: FnMut(usize),
 {
     let out_reg = machine.instruction_register(idx);
-    if let Some(value) = machine.state.registers[out_reg].known_bool() {
+    if let Some(value) = machine.registers[out_reg].known_bool() {
         return PathOutcome::known_bool(value);
     }
 
-    match &machine.state.instructions[idx].data {
+    match &machine.instructions[idx].data {
         InstructionData::Binary { lhs, rhs, .. } => {
             mark_inputs(out_reg, &mut mark, [*lhs, *rhs]);
             PathOutcome::execute(false)
@@ -98,11 +98,11 @@ where
     F: FnMut(usize),
 {
     let out_reg = machine.instruction_register(idx);
-    if let Some(value) = machine.state.registers[out_reg].known_bool() {
+    if let Some(value) = machine.registers[out_reg].known_bool() {
         return PathOutcome::known_bool(value);
     }
 
-    match &machine.state.instructions[idx].data {
+    match &machine.instructions[idx].data {
         InstructionData::Unary { arg, .. } => {
             mark_inputs(out_reg, &mut mark, [*arg]);
             PathOutcome::execute(false)
@@ -121,10 +121,10 @@ where
     F: FnMut(usize),
 {
     let out_reg = machine.instruction_register(idx);
-    let instr = &machine.state.instructions[idx].data;
+    let instr = &machine.instructions[idx].data;
 
     if let InstructionData::Unary { arg, .. } = instr {
-        if let Some(value) = machine.state.registers[*arg].known_bool() {
+        if let Some(value) = machine.registers[*arg].known_bool() {
             return PathOutcome::known_bool(value);
         }
         mark_inputs(out_reg, &mut mark, [*arg]);
@@ -145,13 +145,13 @@ where
     F: FnMut(usize),
 {
     let out_reg = machine.instruction_register(idx);
-    let instr = &machine.state.instructions[idx].data;
+    let instr = &machine.instructions[idx].data;
 
     if let InstructionData::Ternary {
         arg1, arg2, arg3, ..
     } = instr
     {
-        if let Some(value) = machine.state.registers[*arg1].known_bool() {
+        if let Some(value) = machine.registers[*arg1].known_bool() {
             let (pos, reg) = if value { (1, *arg2) } else { (2, *arg3) };
             mark_inputs(out_reg, &mut mark, [reg]);
             return PathOutcome::alias(pos);
@@ -173,11 +173,11 @@ pub fn minmax_path_reduce<D: Discretization, F>(
 where
     F: FnMut(usize),
 {
-    let instr = &machine.state.instructions[idx].data;
+    let instr = &machine.instructions[idx].data;
     if let InstructionData::Binary { lhs, rhs, .. } = instr {
         let out_reg = machine.instruction_register(idx);
-        let lhs_val = &machine.state.registers[*lhs];
-        let rhs_val = &machine.state.registers[*rhs];
+        let lhs_val = &machine.registers[*lhs];
+        let rhs_val = &machine.registers[*rhs];
 
         let mut cmp = Ival::zero(lhs_val.prec());
         cmp.gt_assign(lhs_val, rhs_val);

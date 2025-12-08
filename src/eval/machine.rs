@@ -26,12 +26,8 @@ pub trait Discretization: Clone {
 
 /// Interval evaluation machine with persistent state and discretization
 pub struct Machine<D: Discretization> {
-    pub state: MachineState,
     pub disc: D,
-}
 
-/// Mutable state for machine evaluation
-pub struct MachineState {
     // Program structure
     pub arguments: Vec<String>,
     pub instructions: Vec<Instruction>,
@@ -195,9 +191,11 @@ impl<D: Discretization> MachineBuilder<D> {
         let default_hint = vec![Hint::Execute; instruction_count];
         let precisions = vec![0u32; instruction_count];
         let repeats = vec![false; instruction_count];
-        let output_distance = vec![false; roots.len()];
+        let mut output_distance = vec![false; roots.len()];
+        output_distance.fill(false);
 
-        let mut state = MachineState {
+        Machine {
+            disc: self.disc,
             arguments: vars,
             instructions,
             outputs: roots,
@@ -219,13 +217,6 @@ impl<D: Discretization> MachineBuilder<D> {
             ampl_tuning_bits: self.ampl_tuning_bits,
             profiler: Profiler::with_capacity(self.profile_capacity),
             profiling_enabled: self.profiling_enabled,
-        };
-
-        state.output_distance.fill(false);
-
-        Machine {
-            state,
-            disc: self.disc,
         }
     }
 }
@@ -234,7 +225,7 @@ impl<D: Discretization> Machine<D> {
     /// Return the instruction index that writes to the given register when applicable
     #[inline]
     pub fn register_to_instruction(&self, register: usize) -> Option<usize> {
-        let var_count = self.state.arguments.len();
+        let var_count = self.arguments.len();
         if register >= var_count {
             Some(register - var_count)
         } else {
@@ -245,55 +236,19 @@ impl<D: Discretization> Machine<D> {
     /// Return the register index corresponding to an instruction index
     #[inline]
     pub fn instruction_register(&self, index: usize) -> usize {
-        self.state.arguments.len() + index
-    }
-
-    /// Return the root output register indices
-    #[inline]
-    pub fn outputs(&self) -> &[usize] {
-        &self.state.outputs
-    }
-
-    /// Return the default evaluation hints
-    #[inline]
-    pub fn default_hint(&self) -> &[Hint] {
-        &self.state.default_hint
-    }
-
-    /// Return the initial precision plan
-    #[inline]
-    pub fn initial_precisions(&self) -> &[u32] {
-        &self.state.initial_precisions
-    }
-
-    /// Return the current precision assignments
-    #[inline]
-    pub fn precisions(&self) -> &[u32] {
-        &self.state.precisions
-    }
-
-    /// Return how many times bump mode has run
-    #[inline]
-    pub fn bumps(&self) -> usize {
-        self.state.bumps
-    }
-
-    /// Return the current iteration number
-    #[inline]
-    pub fn iteration(&self) -> usize {
-        self.state.iteration
+        self.arguments.len() + index
     }
 
     /// Return the total number of instructions in the machine
     #[inline]
     pub fn instruction_count(&self) -> usize {
-        self.state.instructions.len()
+        self.instructions.len()
     }
 
     /// Return a snapshot of recorded executions and reset the internal buffer pointer.
     pub fn take_executions(&mut self) -> Vec<Execution> {
-        let slice = self.state.profiler.records().to_vec();
-        self.state.profiler.reset();
+        let slice = self.profiler.records().to_vec();
+        self.profiler.reset();
         slice
     }
 }

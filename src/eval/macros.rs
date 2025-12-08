@@ -513,7 +513,7 @@ macro_rules! def_ops {
 
     // Helper: Standard path reduction (mark all children and execute)
     (@standard_path_reduce $machine:expr, $idx:expr, $mark:expr) => {{
-        let instruction = &$machine.state.instructions[$idx];
+        let instruction = &$machine.instructions[$idx];
         let out_reg = $machine.instruction_register($idx);
 
         // Mark all children (except output register)
