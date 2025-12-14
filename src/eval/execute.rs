@@ -32,12 +32,18 @@ pub fn evaluate_instruction(instruction: &Instruction, registers: &mut [Ival], p
             out_reg.lo.as_float_mut().assign_round(val, Round::Down);
             out_reg.hi.as_float_mut().assign_round(val, Round::Up);
             out_reg.err = ErrorFlags::none();
+            let exact = out_reg.lo.as_float() == out_reg.hi.as_float();
+            out_reg.lo.immovable = exact;
+            out_reg.hi.immovable = exact;
         }
         Rational { val } => {
             let rat = &val.0;
             out_reg.lo.as_float_mut().assign_round(rat, Round::Down);
             out_reg.hi.as_float_mut().assign_round(rat, Round::Up);
             out_reg.err = ErrorFlags::none();
+            let exact = out_reg.lo.as_float() == out_reg.hi.as_float();
+            out_reg.lo.immovable = exact;
+            out_reg.hi.immovable = exact;
         }
         Constant { op } => ops::execute_constant(*op, out_reg),
         Unary { op, arg } => ops::execute_unary(*op, out_reg, get_reg(*arg)),
