@@ -42,18 +42,12 @@ impl<D: Discretization> Machine<D> {
             if let Some(previous) = old_hint.get(idx) {
                 match previous {
                     Hint::KnownBool(val) => {
-                        if !matches!(&hints[idx], Hint::KnownBool(existing) if existing == val) {
-                            converged = false;
-                        }
                         hints[idx] = Hint::KnownBool(*val);
                         continue;
                     }
                     Hint::Alias(pos) => {
                         if let Some(reg) = self.instructions[idx].data.input_at(*pos as usize) {
                             schedule_child(&mut hints, self, reg);
-                        }
-                        if !matches!(&hints[idx], Hint::Alias(p) if p == pos) {
-                            converged = false;
                         }
                         hints[idx] = Hint::Alias(*pos);
                         continue;
@@ -67,7 +61,7 @@ impl<D: Discretization> Machine<D> {
             let mut schedule = |reg: usize| schedule_child(&mut hints, self, reg);
             let outcome = path_reduction(self, idx, &mut schedule);
 
-            converged = converged && hints[idx] == outcome.hint && outcome.converged;
+            converged = converged && outcome.converged;
             hints[idx] = outcome.hint;
         }
 
