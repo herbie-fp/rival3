@@ -247,9 +247,9 @@ impl ErrorFlags {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IvalClass {
-    Pos,
-    Neg,
-    Mix,
+    Pos = 1,
+    Neg = -1,
+    Mix = 0,
 }
 
 pub fn classify(ival: &Ival, strict: bool) -> IvalClass {
