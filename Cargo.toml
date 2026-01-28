@@ -11,8 +11,16 @@ path = "src/lib.rs"
 name = "rival-cli"
 path = "src/bin/main.rs"
 
+[[bin]]
+name = "rival-batch"
+path = "src/bin/batch.rs"
+
+[[bin]]
+name = "rival-repl"
+path = "src/bin/repl.rs"
+
 [dependencies]
-rug = { version = "1.24", features = ["float"] }
+rug = { version = "1.28", features = ["float"] }
 gmp-mpfr-sys = "1.6"
 rand = "0.9"
 indexmap = "2.12"

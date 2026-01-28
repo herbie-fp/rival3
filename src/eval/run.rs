@@ -88,8 +88,6 @@ impl<D: Discretization> Machine<D> {
     }
 
     /// Load argument intervals into the front of the register file
-    /// 
-    /// NOTE: No longer resets profiler
     pub fn load_arguments(&mut self, args: &[Ival]) {
         assert_eq!(args.len(), self.arguments.len(), "Argument count mismatch");
         for (i, arg) in args.iter().cloned().enumerate() {
@@ -101,6 +99,9 @@ impl<D: Discretization> Machine<D> {
         self.precisions.fill(0);
         self.repeats.fill(false);
         self.output_distance.fill(false);
+        if self.profiling_enabled {
+            self.profiler.reset();
+        }
     }
 
     /// Execute instructions once using the supplied precision and hint plan

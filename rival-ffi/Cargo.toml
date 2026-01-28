@@ -1,0 +1,16 @@
+[package]
+name = "rival-ffi"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+rival = { path = ".." }
+gmp-mpfr-sys = "1.6"
+rug = "1.28"
+libc = "0.2"
+
+[build-dependencies]
+cbindgen = "0.29"

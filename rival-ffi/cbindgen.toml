@@ -1,0 +1,32 @@
+language = "C"
+include_guard = "RIVAL_FFI_H"
+tab_width = 4
+style = "both"
+cpp_compat = true
+include_version = true
+includes = ["mpfr.h"]
+
+[export]
+include = [
+    "RivalError",
+    "RivalDiscType",
+    "RivalApplyResult",
+    "RivalAnalyzeResult",
+    "RivalExecution",
+]
+
+[export.rename]
+"RivalExpr" = "RivalExpr"
+"RivalMachine" = "RivalMachine"
+"RivalHints" = "RivalHints"
+"RivalDiscretization" = "RivalDiscretization"
+
+[fn]
+rename_args = "None"
+
+[enum]
+rename_variants = "ScreamingSnakeCase"
+prefix_with_name = true
+
+[parse]
+parse_deps = false
