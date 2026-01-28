@@ -53,13 +53,13 @@
 (define boolean-discretization (discretization 53 bf->bool (lambda (x y) (if (eq? x y) 0 2)) 'bool))
 (define flonum-discretization (discretization 53 bigfloat->flonum (compose abs flonums-between) 'f64))
 
-(define *rival-max-precision* (make-parameter 256))
+(define *rival-max-precision* (make-parameter 10000))
 (define *rival-max-iterations* (make-parameter 5))
 (define *rival-profile-executions* (make-parameter 1000))
 
 (define-runtime-path librival-path
                      (build-path ".."
-                                 "rival-ffi"
+                                 "rival3-ffi"
                                  "target"
                                  "release"
                                  (string-append (case (system-type)

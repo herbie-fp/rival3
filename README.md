@@ -1,4 +1,4 @@
-# rival-rs
+# rival3
 Rival is a library for evaluating real expressions to high precision. You can play around with the CLI:
 
 ```

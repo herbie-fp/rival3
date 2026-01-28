@@ -426,7 +426,7 @@ pub fn endpoint_unary(
 ) -> bool {
     let v = ep.as_float();
     let exact = f(v, out, rnd);
-    ep.immovable && (v.is_infinite() || exact)
+    ep.immovable && exact
 }
 
 #[must_use]

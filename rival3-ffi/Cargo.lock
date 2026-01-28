@@ -339,7 +339,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "rival-ffi"
+name = "rival3-ffi"
 version = "0.1.0"
 dependencies = [
  "cbindgen",
