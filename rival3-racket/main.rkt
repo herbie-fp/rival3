@@ -63,8 +63,8 @@
                                  "target"
                                  "release"
                                  (string-append (case (system-type)
-                                                  [(windows) "rival_ffi"]
-                                                  [else "librival_ffi"])
+                                                  [(windows) "rival3_ffi"]
+                                                  [else "librival3_ffi"])
                                                 (bytes->string/utf-8 (system-type 'so-suffix)))))
 
 (define-ffi-definer define-rival (ffi-lib librival-path))
@@ -93,6 +93,8 @@
 (define-rival rival_expr_var (_fun _pointer _string -> _uint32))
 (define-rival rival_expr_f64 (_fun _pointer _double -> _uint32))
 (define-rival rival_expr_rational (_fun _pointer _int64 _int64 -> _uint32))
+(define-rival rival_expr_bigint (_fun _pointer _string -> _uint32))
+(define-rival rival_expr_bigrational (_fun _pointer _string _string -> _uint32))
 (define-rival rival_expr_pi (_fun _pointer -> _uint32))
 (define-rival rival_expr_e (_fun _pointer -> _uint32))
 
@@ -250,11 +252,13 @@
     ;; Variables
     [(? symbol?) (rival_expr_var arena (symbol->string expr))]
     ;; Numeric literals
-    [(? exact-integer?) (rival_expr_f64 arena (exact->inexact expr))]
+    [(? exact-integer?) (rival_expr_bigint arena (number->string expr))]
     [(? rational?)
      (if (integer? expr)
-         (rival_expr_f64 arena (exact->inexact expr))
-         (rival_expr_rational arena (numerator expr) (denominator expr)))]
+         (rival_expr_bigint arena (number->string (inexact->exact expr)))
+         (rival_expr_bigrational arena
+                                 (number->string (numerator expr))
+                                 (number->string (denominator expr))))]
     [(? real?) (rival_expr_f64 arena (exact->inexact expr))] ; +inf.0, -inf.0, +nan.0, -nan.0
     ;; Unary operators
     [`(- ,x) (rival_expr_neg arena (expr->ffi arena x))]
@@ -421,7 +425,12 @@
       (ptr-set! arg-ptrs _mpfr-pointer i bf)))
 
   (define n-outs (machine-wrapper-n-exprs machine))
-  (define outs (build-vector n-outs (lambda (_) (bf 0.0))))
+  (define discs (machine-wrapper-discs machine))
+  (define outs
+    (build-vector n-outs
+                  (lambda (_)
+                    (parameterize ([bf-precision (*rival-max-precision*)])
+                      (bf 0.0)))))
   (define out-ptrs (machine-wrapper-out-buf machine))
   (for ([i (in-range n-outs)]
         [bf (in-vector outs)])

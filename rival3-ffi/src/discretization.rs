@@ -23,8 +23,19 @@ impl Discretization for RivalDiscretization {
     }
 
     #[inline]
-    fn convert(&self, _idx: usize, v: &Float) -> Float {
-        v.clone()
+    fn convert(&self, idx: usize, v: &Float) -> Float {
+        let disc_type = self.types.get(idx).copied().unwrap_or(RivalDiscType::F64);
+        match disc_type {
+            RivalDiscType::F64 => {
+                let f64_val = v.to_f64();
+                Float::with_val(53, f64_val)
+            }
+            RivalDiscType::F32 => {
+                let f32_val = v.to_f32();
+                Float::with_val(24, f32_val)
+            }
+            RivalDiscType::Bool => v.clone(),
+        }
     }
 
     #[inline]

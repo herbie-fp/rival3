@@ -193,6 +193,10 @@ pub unsafe extern "C" fn rival_apply(
 
             for (i, &ptr) in arg_ptrs.iter().enumerate() {
                 let ival = &mut wrapper.arg_buf[i];
+                // Match precisions
+                let src_prec = unsafe { mpfr::get_prec(ptr) };
+                ival.lo.as_float_mut().set_prec(src_prec as u32);
+                ival.hi.as_float_mut().set_prec(src_prec as u32);
                 unsafe {
                     mpfr::set(ival.lo.as_float_mut().as_raw_mut(), ptr, mpfr::rnd_t::RNDN);
                     mpfr::set(ival.hi.as_float_mut().as_raw_mut(), ptr, mpfr::rnd_t::RNDN);

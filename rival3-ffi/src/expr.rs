@@ -1,5 +1,5 @@
 use rival::Expr;
-use rug::{Float, Rational};
+use rug::{Float, Integer, Rational};
 use std::ffi::CStr;
 use std::os::raw::c_char;
 
@@ -8,6 +8,7 @@ pub(crate) enum ArenaNode {
     Var(String),
     Literal(Float),
     Rational(Rational),
+    BigInt(Integer),
     Pi,
     E,
     Neg(u32),
@@ -117,6 +118,11 @@ impl RivalExprArena {
             ArenaNode::Var(s) => Expr::Var(s.clone()),
             ArenaNode::Literal(f) => Expr::Literal(f.clone()),
             ArenaNode::Rational(r) => Expr::Rational(r.clone()),
+            ArenaNode::BigInt(i) => {
+                // Use enough precision to exactly represent the integer
+                let bits = i.significant_bits().max(53);
+                Expr::Literal(Float::with_val(bits, i))
+            }
             ArenaNode::Pi => Expr::Pi,
             ArenaNode::E => Expr::E,
             ArenaNode::Neg(x) => Expr::Neg(Box::new(self.materialize(*x)?)),
@@ -336,6 +342,60 @@ pub unsafe extern "C" fn rival_expr_rational(
         return RIVAL_EXPR_INVALID;
     }
     unsafe { (*arena).push(ArenaNode::Rational(Rational::from((num, den)))) }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rival_expr_bigint(
+    arena: *mut RivalExprArena,
+    value_str: *const c_char,
+) -> u32 {
+    if arena.is_null() || value_str.is_null() {
+        return RIVAL_EXPR_INVALID;
+    }
+    unsafe {
+        let s = match CStr::from_ptr(value_str).to_str() {
+            Ok(s) => s,
+            Err(_) => return RIVAL_EXPR_INVALID,
+        };
+        let int = match Integer::parse(s) {
+            Ok(parsed) => Integer::from(parsed),
+            Err(_) => return RIVAL_EXPR_INVALID,
+        };
+        (*arena).push(ArenaNode::BigInt(int))
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rival_expr_bigrational(
+    arena: *mut RivalExprArena,
+    num_str: *const c_char,
+    den_str: *const c_char,
+) -> u32 {
+    if arena.is_null() || num_str.is_null() || den_str.is_null() {
+        return RIVAL_EXPR_INVALID;
+    }
+    unsafe {
+        let num_s = match CStr::from_ptr(num_str).to_str() {
+            Ok(s) => s,
+            Err(_) => return RIVAL_EXPR_INVALID,
+        };
+        let den_s = match CStr::from_ptr(den_str).to_str() {
+            Ok(s) => s,
+            Err(_) => return RIVAL_EXPR_INVALID,
+        };
+        let num = match Integer::parse(num_s) {
+            Ok(parsed) => Integer::from(parsed),
+            Err(_) => return RIVAL_EXPR_INVALID,
+        };
+        let den = match Integer::parse(den_s) {
+            Ok(parsed) => Integer::from(parsed),
+            Err(_) => return RIVAL_EXPR_INVALID,
+        };
+        if den.cmp0() == std::cmp::Ordering::Equal {
+            return RIVAL_EXPR_INVALID;
+        }
+        (*arena).push(ArenaNode::Rational(Rational::from((num, den))))
+    }
 }
 
 #[unsafe(no_mangle)]

@@ -1,5 +1,5 @@
 language = "C"
-include_guard = "RIVAL_FFI_H"
+include_guard = "RIVAL3_FFI_H"
 tab_width = 4
 style = "both"
 cpp_compat = true

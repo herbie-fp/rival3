@@ -146,7 +146,7 @@
 (define (rival-type expr env)
   (match expr
     [(? number?) 'real]
-    [(? symbol?) (hash-ref env expr)]
+    [(? symbol?) (dict-ref env expr)]
     [(list op args ...)
      (match (hash-ref rival-functions op #f)
        [#f (error 'rival-type "Unknown operator: ~a" op)]

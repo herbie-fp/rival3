@@ -1,5 +1,5 @@
-#ifndef RIVAL_FFI_H
-#define RIVAL_FFI_H
+#ifndef RIVAL3_FFI_H
+#define RIVAL3_FFI_H
 
 /* Generated with cbindgen:0.29.2 */
 
@@ -124,6 +124,12 @@ uint32_t rival_expr_var(struct RivalExprArena *arena, const char *name);
 uint32_t rival_expr_f64(struct RivalExprArena *arena, double value);
 
 uint32_t rival_expr_rational(struct RivalExprArena *arena, int64_t num, int64_t den);
+
+uint32_t rival_expr_bigint(struct RivalExprArena *arena, const char *value_str);
+
+uint32_t rival_expr_bigrational(struct RivalExprArena *arena,
+                                const char *num_str,
+                                const char *den_str);
 
 uint32_t rival_expr_pi(struct RivalExprArena *arena);
 
@@ -320,4 +326,4 @@ RivalProfilingMode rival_machine_get_profiling(const struct RivalMachine *machin
 }  // extern "C"
 #endif  // __cplusplus
 
-#endif  /* RIVAL_FFI_H */
+#endif  /* RIVAL3_FFI_H */
