@@ -66,7 +66,8 @@ impl Ival {
                     let log2_sum_exceeds_threshold = |exp: &Float, base: &Float| -> bool {
                         let mut log2_base = zero(prec);
                         mpfr_log2(base, &mut log2_base, Round::Zero);
-                        (mpfr_get_exp(exp) + mpfr_get_exp(&log2_base)) > mpfr_get_exp(&threshold)
+                        mpfr_get_exp(exp).saturating_add(mpfr_get_exp(&log2_base))
+                            > mpfr_get_exp(&threshold)
                     };
 
                     let x_class_i = x_class as i32;
