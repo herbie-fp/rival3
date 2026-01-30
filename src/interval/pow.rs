@@ -36,7 +36,9 @@ impl Ival {
             neg_result.pow_neg_assign(&neg, y);
             pos_result.pow_pos_assign(&pos, y);
 
-            self.union_assign(neg_result);
+            // Assign neg_result to self first, then union with pos_result
+            // This avoids using the garbage initial value of self in the union
+            self.assign_from(&neg_result);
             self.union_assign(pos_result);
         }
     }
