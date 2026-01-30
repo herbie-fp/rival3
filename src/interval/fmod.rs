@@ -52,7 +52,7 @@ impl Ival {
             let tmp_neg = neg_result.clone();
             neg_result.neg_assign(&tmp_neg);
 
-            self.union_assign(pos_result);
+            self.assign_from(&pos_result);
             self.union_assign(neg_result);
         }
     }
@@ -103,7 +103,7 @@ impl Ival {
             let tmp_neg = neg_result.clone();
             neg_result.neg_assign(&tmp_neg);
 
-            self.union_assign(pos_result);
+            self.assign_from(&pos_result);
             self.union_assign(neg_result);
         }
     }

@@ -36,7 +36,7 @@ impl Ival {
             neg_result.pow_neg_assign(&neg, y);
             pos_result.pow_pos_assign(&pos, y);
 
-            self.union_assign(neg_result);
+            self.assign_from(&neg_result);
             self.union_assign(pos_result);
         }
     }
@@ -168,7 +168,7 @@ impl Ival {
             pos_pow.pow_pos_assign(&abs_x, y);
             neg_pow.neg_assign(&pos_pow);
 
-            self.union_assign(pos_pow);
+            self.assign_from(&pos_pow);
             self.union_assign(neg_pow);
             self.err.partial = true;
         }

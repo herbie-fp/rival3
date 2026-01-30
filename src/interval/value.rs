@@ -123,6 +123,11 @@ impl Ival {
     }
 
     pub fn assign_from(&mut self, src: &Ival) {
+        // Ensure precision
+        let src_prec = src.prec();
+        self.lo.as_float_mut().set_prec(src_prec);
+        self.hi.as_float_mut().set_prec(src_prec);
+        // Assign
         self.lo.as_float_mut().assign(src.lo.as_float());
         self.lo.immovable = src.lo.immovable;
         self.hi.as_float_mut().assign(src.hi.as_float());
