@@ -302,19 +302,43 @@ pub unsafe extern "C" fn rival_analyze_with_hints(
         }
 
         for i in 0..n_args {
+            let lo_ptr = rect_ptrs[2 * i];
+            let hi_ptr = rect_ptrs[2 * i + 1];
+
+            let lo_prec = unsafe { mpfr::get_prec(lo_ptr) } as u32;
+            let hi_prec = unsafe { mpfr::get_prec(hi_ptr) } as u32;
+            let prec = lo_prec.max(hi_prec);
+
             let ival = &mut wrapper.rect_buf[i];
+            ival.lo.as_float_mut().set_prec(prec);
+            ival.hi.as_float_mut().set_prec(prec);
+
             unsafe {
                 mpfr::set(
                     ival.lo.as_float_mut().as_raw_mut(),
-                    rect_ptrs[2 * i],
+                    lo_ptr,
                     mpfr::rnd_t::RNDN,
                 );
                 mpfr::set(
                     ival.hi.as_float_mut().as_raw_mut(),
-                    rect_ptrs[2 * i + 1],
+                    hi_ptr,
                     mpfr::rnd_t::RNDN,
                 );
             }
+
+            let fixed = { ival.lo.as_float() == ival.hi.as_float() };
+            let err = {
+                let lo = ival.lo.as_float();
+                let hi = ival.hi.as_float();
+                lo.is_nan() || hi.is_nan() || (fixed && lo.is_infinite())
+            };
+            ival.lo.immovable = fixed;
+            ival.hi.immovable = fixed;
+            ival.err = if err {
+                ErrorFlags::error()
+            } else {
+                ErrorFlags::none()
+            };
         }
 
         let hints_opt = if hints.is_null() {
