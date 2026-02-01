@@ -191,7 +191,7 @@
 (define-rival rival_instruction_names
               (_fun _pointer (out : (_ptr o _size)) -> (ptr : _pointer) -> (values ptr out)))
 
-(struct machine-wrapper (ptr n-vars n-exprs discs arg-buf out-buf rect-buf name-table)
+(struct machine-wrapper (ptr n-vars n-exprs discs arg-buf arg-bfs out-buf out-bfs rect-buf name-table)
   #:property prop:cpointer
   (struct-field-index ptr))
 
@@ -203,12 +203,9 @@
 (define (machine-destroy wrapper)
   (when (machine-wrapper-ptr wrapper)
     (rival_machine_free (machine-wrapper-ptr wrapper)))
-  (when (machine-wrapper-arg-buf wrapper)
-    (free (machine-wrapper-arg-buf wrapper)))
-  (when (machine-wrapper-out-buf wrapper)
-    (free (machine-wrapper-out-buf wrapper)))
-  (when (machine-wrapper-rect-buf wrapper)
-    (free (machine-wrapper-rect-buf wrapper))))
+  (free-ptr (machine-wrapper-arg-buf wrapper))
+  (free-ptr (machine-wrapper-out-buf wrapper))
+  (free-ptr (machine-wrapper-rect-buf wrapper)))
 
 (define (hints-destroy wrapper)
   (when (hints-wrapper-ptr wrapper)
@@ -361,7 +358,7 @@
            [d (in-list discs)])
        (ptr-set! types-arr _rival-disc-type i (discretization-type d)))
      (define disc-ptr (rival_disc_mixed types-arr n target))
-     (free types-arr)
+     (free-ptr types-arr)
      disc-ptr]))
 
 (define (rival-compile exprs vars discs)
@@ -392,8 +389,8 @@
                        (*rival-max-precision*)
                        (*rival-profile-executions*)))
 
-  (free exprs-arr)
-  (free vars-arr)
+  (free-ptr exprs-arr)
+  (free-ptr vars-arr)
   (rival_disc_free disc-ptr)
   (rival_expr_arena_free arena)
 
@@ -403,7 +400,25 @@
   (define arg-buf (malloc _pointer n-vars 'raw))
   (define out-buf (malloc _pointer n-exprs 'raw))
   (define rect-buf (malloc _pointer (* 2 n-vars) 'raw))
-  ;; Cache instruction names up front for fast decoding of profiler data
+
+  (define arg-bfs
+    (build-vector n-vars
+                  (lambda (_)
+                    (parameterize ([bf-precision 53])
+                      (bf 0.0)))))
+  (for ([i (in-range n-vars)]
+        [bf (in-vector arg-bfs)])
+    (ptr-set! arg-buf _mpfr-pointer i bf))
+
+  (define out-bfs
+    (build-vector n-exprs
+                  (lambda (_)
+                    (parameterize ([bf-precision (*rival-max-precision*)])
+                      (bf 0.0)))))
+  (for ([i (in-range n-exprs)]
+        [bf (in-vector out-bfs)])
+    (ptr-set! out-buf _mpfr-pointer i bf))
+
   (define-values (names-ptr names-len) (rival_instruction_names machine-ptr))
   (define name-table
     (if (and names-ptr (> names-len 0))
@@ -411,7 +426,16 @@
         (vector)))
 
   (define wrapper
-    (machine-wrapper machine-ptr n-vars n-exprs discs arg-buf out-buf rect-buf name-table))
+    (machine-wrapper machine-ptr
+                     n-vars
+                     n-exprs
+                     discs
+                     arg-buf
+                     arg-bfs
+                     out-buf
+                     out-bfs
+                     rect-buf
+                     name-table))
   (register-finalizer wrapper machine-destroy)
   wrapper)
 
@@ -425,22 +449,11 @@
       (ptr-set! arg-ptrs _mpfr-pointer i bf)))
 
   (define n-outs (machine-wrapper-n-exprs machine))
-  (define discs (machine-wrapper-discs machine))
-  (define outs
-    (build-vector n-outs
-                  (lambda (_)
-                    (parameterize ([bf-precision (*rival-max-precision*)])
-                      (bf 0.0)))))
+  (define out-bfs (machine-wrapper-out-bfs machine))
   (define out-ptrs (machine-wrapper-out-buf machine))
-  (for ([i (in-range n-outs)]
-        [bf (in-vector outs)])
-    (ptr-set! out-ptrs _mpfr-pointer i bf))
 
-  (define hints-ptr
-    (if hints
-        (hints-wrapper-ptr hints)
-        #f))
-  (define args-to-pass (if (> n-args 0) arg-ptrs #f))
+  (define hints-ptr (and hints (hints-wrapper-ptr hints)))
+  (define args-to-pass (and (> n-args 0) arg-ptrs))
 
   (define status-code
     (rival_apply (machine-wrapper-ptr machine)
@@ -455,9 +468,10 @@
   (match status-code
     ['ok
      (define discs (machine-wrapper-discs machine))
-     (list->vector (for/list ([bf (in-vector outs)]
-                              [disc (in-list discs)])
-                     ((discretization-convert disc) bf)))]
+     (for/vector #:length n-outs
+                 ([bf (in-vector out-bfs)]
+                  [disc (in-list discs)])
+       ((discretization-convert disc) bf))]
     ['invalid_input (raise (exn:rival:invalid "Invalid input" (current-continuation-marks) pt))]
     ['unsamplable (raise (exn:rival:unsamplable "Unsamplable input" (current-continuation-marks) pt))]
     ['panic (error 'rival-apply "Rival panic")]
@@ -551,7 +565,7 @@
 (define (rival-profiling-enabled? machine)
   (eq? (rival_machine_get_profiling (machine-wrapper-ptr machine)) 'on))
 
-(define c-free (get-ffi-obj "free" #f (_fun _pointer -> _void) (lambda () #f)))
-(define (free p)
-  (when c-free
-    (c-free p)))
+(define ffi-free (get-ffi-obj "free" #f (_fun _pointer -> _void)))
+(define (free-ptr p)
+  (when p
+    (ffi-free p)))
