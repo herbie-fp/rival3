@@ -440,27 +440,47 @@ macro_rules! def_ops {
 
         /// Optimize expression for numerical stability
         pub fn optimize_expr(expr: Expr) -> Expr {
-            // TODO: Consider passing the box straight to the optimize closures
-            // so that we don't have to reallocate a new box every time we
-            // fail to optimize (most likely scenario); we do the opposite here
-            match expr {
+            // Optimize each node once (top-down), then recurse into children
+            // without re-optimizing the parent after children change
+            // TODO: might not the best, dig deeper
+            let optimized = match expr {
                 $(
-                    Expr::$unary_name(x) => optimize_unary(UnaryOp::$unary_name, optimize_expr(*x)),
+                    Expr::$unary_name(x) => optimize_unary(UnaryOp::$unary_name, *x),
                 )*
 
                 $(
-                    Expr::$unary_param_name(param, x) => optimize_unary_param(UnaryParamOp::$unary_param_name, param, optimize_expr(*x)),
+                    Expr::$unary_param_name(param, x) => optimize_unary_param(UnaryParamOp::$unary_param_name, param, *x),
                 )*
 
                 $(
-                    Expr::$binary_name(x, y) => optimize_binary(BinaryOp::$binary_name, optimize_expr(*x), optimize_expr(*y)),
+                    Expr::$binary_name(x, y) => optimize_binary(BinaryOp::$binary_name, *x, *y),
                 )*
 
                 $(
-                    Expr::$ternary_name(x, y, z) => optimize_ternary(TernaryOp::$ternary_name, optimize_expr(*x), optimize_expr(*y), optimize_expr(*z)),
+                    Expr::$ternary_name(x, y, z) => optimize_ternary(TernaryOp::$ternary_name, *x, *y, *z),
                 )*
 
                 // Leaves
+                leaf @ (Expr::Var(_) | Expr::Literal(_) | Expr::Rational(_) $( | Expr::$const_name )*) => leaf,
+            };
+
+            match optimized {
+                $(
+                    Expr::$unary_name(x) => Expr::$unary_name(Box::new(optimize_expr(*x))),
+                )*
+
+                $(
+                    Expr::$unary_param_name(param, x) => Expr::$unary_param_name(param, Box::new(optimize_expr(*x))),
+                )*
+
+                $(
+                    Expr::$binary_name(x, y) => Expr::$binary_name(Box::new(optimize_expr(*x)), Box::new(optimize_expr(*y))),
+                )*
+
+                $(
+                    Expr::$ternary_name(x, y, z) => Expr::$ternary_name(Box::new(optimize_expr(*x)), Box::new(optimize_expr(*y)), Box::new(optimize_expr(*z))),
+                )*
+
                 leaf @ (Expr::Var(_) | Expr::Literal(_) | Expr::Rational(_) $( | Expr::$const_name )*) => leaf,
             }
         }
