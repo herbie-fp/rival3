@@ -58,10 +58,10 @@ pub(super) fn schedule_child<D: Discretization>(
     machine: &Machine<D>,
     reg: usize,
 ) {
-    if let Some(idx) = machine.register_to_instruction(reg)
-        && !matches!(hints[idx], Hint::KnownBool(_) | Hint::Alias(_))
-    {
-        hints[idx] = Hint::Execute;
+    if let Some(idx) = machine.register_to_instruction(reg) {
+        if !matches!(hints[idx], Hint::KnownBool(_) | Hint::Alias(_)) {
+            hints[idx] = Hint::Execute;
+        }
     }
 }
 
