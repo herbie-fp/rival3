@@ -11,6 +11,7 @@ function clean {
 }
 
 clean
+cargo build --release --manifest-path rival3-ffi/Cargo.toml
 xz -d -k -f infra/points.json.xz
 racket -y infra/time.rkt --dir "$REPORTDIR" --profile profile.json infra/points.json
 cp profile.json "$REPORTDIR"/profile.json
