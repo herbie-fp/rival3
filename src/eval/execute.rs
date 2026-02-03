@@ -29,6 +29,7 @@ pub fn evaluate_instruction(instruction: &Instruction, registers: &mut [Ival], p
     match &instruction.data {
         Literal { value } => {
             let val = &value.0;
+            out_reg.set_prec(precision.max(val.prec()));
             out_reg.lo.as_float_mut().assign_round(val, Round::Down);
             out_reg.hi.as_float_mut().assign_round(val, Round::Up);
             out_reg.err = ErrorFlags::none();

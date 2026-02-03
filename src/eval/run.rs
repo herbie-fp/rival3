@@ -26,11 +26,10 @@ impl<D: Discretization> Machine<D> {
             &hint_storage
         };
 
-        for iteration in 0..=max_iterations {
-            match self.run_iteration(iteration, hint_slice)? {
-                Some(results) => return Ok(results),
-                None if iteration == max_iterations => return Err(RivalError::Unsamplable),
-                None => continue,
+        // Run iterations [0, max_iterations)
+        for iteration in 0..max_iterations {
+            if let Some(results) = self.run_iteration(iteration, hint_slice)? {
+                return Ok(results);
             }
         }
 
