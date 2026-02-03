@@ -142,17 +142,17 @@ impl<D: Discretization> Machine<D> {
                 }
                 // Path reduction aliasing the output of an instruction to one of its inputs
                 Hint::Alias(pos) => {
-                    if let Some(src_reg) = instruction.data.input_at(*pos as usize) {
-                        if src_reg != out_reg {
-                            let (src, dst) = if src_reg < out_reg {
-                                let (left, right) = self.registers.split_at_mut(out_reg);
-                                (&left[src_reg], &mut right[0])
-                            } else {
-                                let (left, right) = self.registers.split_at_mut(src_reg);
-                                (&right[0], &mut left[out_reg])
-                            };
-                            dst.assign_from(src);
-                        }
+                    if let Some(src_reg) = instruction.data.input_at(*pos as usize)
+                        && src_reg != out_reg
+                    {
+                        let (src, dst) = if src_reg < out_reg {
+                            let (left, right) = self.registers.split_at_mut(out_reg);
+                            (&left[src_reg], &mut right[0])
+                        } else {
+                            let (left, right) = self.registers.split_at_mut(src_reg);
+                            (&right[0], &mut left[out_reg])
+                        };
+                        dst.assign_from(src);
                     }
                 }
                 // Use pre-computed boolean value

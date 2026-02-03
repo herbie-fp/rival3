@@ -87,10 +87,8 @@ fn backward_pass<D: Discretization>(machine: &mut Machine<D>, hints: &[Hint]) ->
     // Slack grows exponentially with iteration to push intervals away from boundaries
     let slack = slack_bits(machine.iteration, machine.slack_unit);
     for (&root, &boundary_issue) in machine.outputs.iter().zip(machine.output_distance.iter()) {
-        if boundary_issue {
-            if let Some(idx) = machine.register_to_instruction(root) {
-                vprecs_max[idx] = vprecs_max[idx].max(slack);
-            }
+        if boundary_issue && let Some(idx) = machine.register_to_instruction(root) {
+            vprecs_max[idx] = vprecs_max[idx].max(slack);
         }
     }
 
@@ -167,17 +165,15 @@ fn backward_pass<D: Discretization>(machine: &mut Machine<D>, hints: &[Hint]) ->
     machine.repeats.copy_from_slice(&work_repeats);
     machine.precisions.copy_from_slice(&vprecs_max);
 
-    if profiling {
-        if let Some(t0) = start_time {
-            let dt_ms = t0.elapsed().as_secs_f64() * 1000.0;
-            machine.profiler.record(Execution {
-                name: "adjust",
-                number: -1,
-                precision: (machine.iteration as u32) * 1000,
-                time_ms: dt_ms,
-                iteration: machine.iteration,
-            });
-        }
+    if profiling && let Some(t0) = start_time {
+        let dt_ms = t0.elapsed().as_secs_f64() * 1000.0;
+        machine.profiler.record(Execution {
+            name: "adjust",
+            number: -1,
+            precision: (machine.iteration as u32) * 1000,
+            time_ms: dt_ms,
+            iteration: machine.iteration,
+        });
     }
     false
 }
