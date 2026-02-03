@@ -1,3 +1,5 @@
+cargo-features = ["edition2024"]
+
 [package]
 name = "rival3-ffi"
 version = "0.1.0"
