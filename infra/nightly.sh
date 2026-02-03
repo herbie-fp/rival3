@@ -2,6 +2,7 @@
 set -e -x
 
 REPORTDIR="report"
+export PATH=~/.cargo/bin:$PATH
 
 function clean {
   if [ -d "$REPORTDIR" ]; then
@@ -11,6 +12,7 @@ function clean {
 }
 
 clean
+rustup update
 cargo build --release --manifest-path rival3-ffi/Cargo.toml
 xz -d -k -f infra/points.json.xz
 racket -y infra/time.rkt --dir "$REPORTDIR" --profile profile.json infra/points.json
