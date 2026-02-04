@@ -40,6 +40,21 @@ pub struct RivalAnalyzeResult {
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn rival_machine_configure_baseline(machine: *mut RivalMachine) -> bool {
+    let result = panic::catch_unwind(|| {
+        if machine.is_null() {
+            return false;
+        }
+
+        let wrapper = unsafe { &mut *machine };
+        wrapper.machine.configure_baseline();
+        true
+    });
+
+    result.unwrap_or(false)
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn rival_machine_new(
     arena: *const RivalExprArena,
     expr_handles: *const u32,
@@ -245,6 +260,98 @@ pub unsafe extern "C" fn rival_apply(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn rival_apply_baseline(
+    machine: *mut RivalMachine,
+    args: *const *const mpfr_t,
+    n_args: usize,
+    out: *const *mut mpfr_t,
+    n_out: usize,
+    hints: *const RivalHints,
+    max_precision: u32,
+) -> RivalError {
+    let result = panic::catch_unwind(|| {
+        if machine.is_null() || out.is_null() || (args.is_null() && n_args > 0) {
+            return RivalError::InvalidInput;
+        }
+
+        let wrapper = unsafe { &mut *machine };
+
+        if n_args != wrapper.n_vars || n_out != wrapper.n_exprs {
+            return RivalError::InvalidInput;
+        }
+
+        if !hints.is_null() && unsafe { (*hints).hints.len() } != wrapper.machine.instructions.len()
+        {
+            return RivalError::InvalidInput;
+        }
+
+        let m = &mut wrapper.machine;
+        m.max_precision = max_precision;
+
+        if n_args > 0 {
+            let arg_ptrs = unsafe { slice::from_raw_parts(args, n_args) };
+
+            // Validate all MPFR pointers before use
+            for &ptr in arg_ptrs.iter() {
+                if ptr.is_null() {
+                    return RivalError::InvalidInput;
+                }
+            }
+
+            for (i, &ptr) in arg_ptrs.iter().enumerate() {
+                let ival = &mut wrapper.arg_buf[i];
+                // Match precisions
+                let src_prec = unsafe { mpfr::get_prec(ptr) };
+                ival.lo.as_float_mut().set_prec(src_prec as u32);
+                ival.hi.as_float_mut().set_prec(src_prec as u32);
+                unsafe {
+                    mpfr::set(ival.lo.as_float_mut().as_raw_mut(), ptr, mpfr::rnd_t::RNDN);
+                    mpfr::set(ival.hi.as_float_mut().as_raw_mut(), ptr, mpfr::rnd_t::RNDN);
+                }
+                ival.lo.immovable = true;
+                ival.hi.immovable = true;
+                ival.err = if ival.lo.as_float().is_finite() {
+                    ErrorFlags::none()
+                } else {
+                    ErrorFlags::error()
+                };
+            }
+        }
+
+        let hints_opt = if hints.is_null() {
+            None
+        } else {
+            Some(unsafe { (*hints).hints.as_slice() })
+        };
+        let apply_result = m.apply_baseline(&wrapper.arg_buf, hints_opt);
+
+        match apply_result {
+            Ok(outputs) => {
+                if outputs.len() != n_out {
+                    return RivalError::InvalidInput;
+                }
+                let out_ptrs = unsafe { slice::from_raw_parts(out, n_out) };
+                for &out_ptr in out_ptrs.iter() {
+                    if out_ptr.is_null() {
+                        return RivalError::InvalidInput;
+                    }
+                }
+                for (i, val) in outputs.iter().enumerate() {
+                    unsafe {
+                        mpfr::set(out_ptrs[i], val.lo.as_float().as_raw(), mpfr::rnd_t::RNDN)
+                    };
+                }
+                RivalError::Ok
+            }
+            Err(CoreError::InvalidInput) => RivalError::InvalidInput,
+            Err(CoreError::Unsamplable) => RivalError::Unsamplable,
+        }
+    });
+
+    result.unwrap_or(RivalError::Panic)
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn rival_analyze_with_hints(
     machine: *mut RivalMachine,
     rect: *const *const mpfr_t,
@@ -347,6 +454,128 @@ pub unsafe extern "C" fn rival_analyze_with_hints(
             Some(unsafe { (*hints).hints.as_slice() })
         };
         let (status, next_hints, converged) = m.analyze_with_hints(&wrapper.rect_buf, hints_opt);
+
+        RivalAnalyzeResult {
+            error: RivalError::Ok,
+            is_error: !status.lo.as_float().is_zero(),
+            maybe_error: !status.hi.as_float().is_zero(),
+            converged,
+            hints: Box::into_raw(Box::new(RivalHints { hints: next_hints })),
+        }
+    });
+
+    result.unwrap_or(RivalAnalyzeResult {
+        error: RivalError::Panic,
+        is_error: true,
+        maybe_error: true,
+        converged: false,
+        hints: ptr::null_mut(),
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rival_analyze_baseline_with_hints(
+    machine: *mut RivalMachine,
+    rect: *const *const mpfr_t,
+    n_args: usize,
+    hints: *const RivalHints,
+) -> RivalAnalyzeResult {
+    let result = panic::catch_unwind(|| {
+        if machine.is_null() || rect.is_null() {
+            return RivalAnalyzeResult {
+                error: RivalError::InvalidInput,
+                is_error: true,
+                maybe_error: true,
+                converged: false,
+                hints: ptr::null_mut(),
+            };
+        }
+
+        let wrapper = unsafe { &mut *machine };
+
+        if n_args != wrapper.n_vars {
+            return RivalAnalyzeResult {
+                error: RivalError::InvalidInput,
+                is_error: true,
+                maybe_error: true,
+                converged: false,
+                hints: ptr::null_mut(),
+            };
+        }
+
+        if !hints.is_null() && unsafe { (*hints).hints.len() } != wrapper.machine.instructions.len()
+        {
+            return RivalAnalyzeResult {
+                error: RivalError::InvalidInput,
+                is_error: true,
+                maybe_error: true,
+                converged: false,
+                hints: ptr::null_mut(),
+            };
+        }
+
+        let m = &mut wrapper.machine;
+        let rect_ptrs = unsafe { slice::from_raw_parts(rect, n_args * 2) };
+
+        // Validate all MPFR pointers before use
+        for &ptr in rect_ptrs.iter() {
+            if ptr.is_null() {
+                return RivalAnalyzeResult {
+                    error: RivalError::InvalidInput,
+                    is_error: true,
+                    maybe_error: true,
+                    converged: false,
+                    hints: ptr::null_mut(),
+                };
+            }
+        }
+
+        for i in 0..n_args {
+            let lo_ptr = rect_ptrs[2 * i];
+            let hi_ptr = rect_ptrs[2 * i + 1];
+
+            let lo_prec = unsafe { mpfr::get_prec(lo_ptr) } as u32;
+            let hi_prec = unsafe { mpfr::get_prec(hi_ptr) } as u32;
+            let prec = lo_prec.max(hi_prec);
+
+            let ival = &mut wrapper.rect_buf[i];
+            ival.lo.as_float_mut().set_prec(prec);
+            ival.hi.as_float_mut().set_prec(prec);
+
+            unsafe {
+                mpfr::set(
+                    ival.lo.as_float_mut().as_raw_mut(),
+                    lo_ptr,
+                    mpfr::rnd_t::RNDN,
+                );
+                mpfr::set(
+                    ival.hi.as_float_mut().as_raw_mut(),
+                    hi_ptr,
+                    mpfr::rnd_t::RNDN,
+                );
+            }
+
+            let fixed = { ival.lo.as_float() == ival.hi.as_float() };
+            let err = {
+                let lo = ival.lo.as_float();
+                let hi = ival.hi.as_float();
+                lo.is_nan() || hi.is_nan() || (fixed && lo.is_infinite())
+            };
+            ival.lo.immovable = fixed;
+            ival.hi.immovable = fixed;
+            ival.err = if err {
+                ErrorFlags::error()
+            } else {
+                ErrorFlags::none()
+            };
+        }
+
+        let hints_opt = if hints.is_null() {
+            None
+        } else {
+            Some(unsafe { (*hints).hints.as_slice() })
+        };
+        let (status, next_hints, converged) = m.analyze_baseline_with_hints(&wrapper.rect_buf, hints_opt);
 
         RivalAnalyzeResult {
             error: RivalError::Ok,

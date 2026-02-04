@@ -36,6 +36,78 @@ impl<D: Discretization> Machine<D> {
         Err(RivalError::Unsamplable)
     }
 
+    /// Evaluate the machine using the baseline strategy
+    pub fn apply_baseline(
+        &mut self,
+        args: &[Ival],
+        hint: Option<&[Hint]>,
+    ) -> Result<Vec<Ival>, RivalError> {
+        self.load_arguments(args);
+
+        let hint_storage;
+        let hint_slice: &[Hint] = if let Some(h) = hint {
+            h
+        } else {
+            hint_storage = self.default_hint.clone();
+            &hint_storage
+        };
+
+        let start_prec = self.disc.target().saturating_add(10);
+        let mut prec = start_prec;
+        let mut iter: usize = 0;
+
+        loop {
+            self.iteration = iter;
+            self.baseline_adjust(prec);
+            self.run_with_hint(hint_slice);
+
+            match self.collect_outputs()? {
+                Some(outputs) => return Ok(outputs),
+                None => {
+                    let next = prec.saturating_mul(2);
+                    if next > self.max_precision {
+                        return Err(RivalError::Unsamplable);
+                    }
+                    prec = next;
+                    iter = iter.saturating_add(1);
+                }
+            }
+        }
+    }
+
+    /// Analyze an input rectangle using the baseline strategy
+    pub fn analyze_baseline_with_hints(
+        &mut self,
+        rect: &[Ival],
+        hint: Option<&[Hint]>,
+    ) -> (Ival, Vec<Hint>, bool) {
+        self.load_arguments(rect);
+
+        let tmp;
+        let hint_slice = if let Some(h) = hint {
+            h
+        } else {
+            tmp = self.default_hint.clone();
+            &tmp
+        };
+
+        self.iteration = 0;
+        self.baseline_adjust(self.disc.target().saturating_add(10));
+        self.run_with_hint(hint_slice);
+
+        let (good, _done, bad, stuck) = self.return_flags();
+        let (next_hint, converged) = self.make_hint(hint_slice);
+
+        let status = Ival::bool_interval(bad || stuck, !good);
+        (status, next_hint, converged)
+    }
+
+    /// Analyze a hyper-rectangle using the baseline strategy and return only the boolean interval status.
+    pub fn analyze_baseline(&mut self, rect: &[Ival]) -> Ival {
+        let (status, _hint, _conv) = self.analyze_baseline_with_hints(rect, None);
+        status
+    }
+
     /// Run a single iteration with precision tuning and hint-guided evaluation
     pub fn run_iteration(
         &mut self,
@@ -160,6 +232,84 @@ impl<D: Discretization> Machine<D> {
                     self.registers[out_reg] = Ival::bool_interval(*value, *value);
                 }
             }
+        }
+    }
+
+    fn baseline_adjust(&mut self, new_prec: u32) {
+        let instruction_count = self.instructions.len();
+        let profiling = self.profiling_enabled;
+        let start_time = if profiling {
+            Some(std::time::Instant::now())
+        } else {
+            None
+        };
+
+        // Baseline uses a single global precision for all instructions
+        self.precisions.fill(new_prec);
+
+        if self.iteration != 0 {
+            let var_count = self.arguments.len();
+
+            // Determine which instructions can affect outputs (must be executed)
+            let mut useful = vec![false; instruction_count];
+            for &root in &self.outputs {
+                if let Some(idx) = self.register_to_instruction(root) {
+                    useful[idx] = true;
+                }
+            }
+
+            for idx in (0..instruction_count).rev() {
+                if !useful[idx] {
+                    continue;
+                }
+                let out_reg = self.instruction_register(idx);
+                let reg = &self.registers[out_reg];
+                if reg.lo.immovable && reg.hi.immovable {
+                    useful[idx] = false;
+                    continue;
+                }
+                self.instructions[idx].for_each_input(|reg| {
+                    if reg >= var_count {
+                        useful[reg - var_count] = true;
+                    }
+                });
+            }
+
+            // Set repeats and update constant precisions
+            for idx in 0..instruction_count {
+                let is_constant = self.initial_repeats[idx];
+                let best_known = self.best_known_precisions[idx];
+
+                let mut inputs_stable = true;
+                if is_constant {
+                    self.instructions[idx].for_each_input(|reg| {
+                        if reg >= var_count && !self.repeats[reg - var_count] {
+                            inputs_stable = false;
+                        }
+                    });
+                }
+
+                let no_need_to_reevaluate =
+                    is_constant && new_prec <= best_known && inputs_stable;
+                let result_is_exact_already = !useful[idx];
+                let repeat = result_is_exact_already || no_need_to_reevaluate;
+
+                if is_constant && !repeat {
+                    self.best_known_precisions[idx] = new_prec;
+                }
+                self.repeats[idx] = repeat;
+            }
+        }
+
+        if profiling && let Some(t0) = start_time {
+            let dt_ms = t0.elapsed().as_secs_f64() * 1000.0;
+            self.profiler.record(Execution {
+                name: "adjust",
+                number: -1,
+                precision: (self.iteration as u32) * 1000,
+                time_ms: dt_ms,
+                iteration: self.iteration,
+            });
         }
     }
 

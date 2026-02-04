@@ -3,3 +3,5 @@ dump-rival/
 .DS_Store
 *.zo
 *.dep
+profile.json
+report/

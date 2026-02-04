@@ -10,8 +10,12 @@
 
 (provide rival-compile
          rival-apply
+         baseline-compile
+         baseline-apply
          rival-analyze-with-hints
          rival-analyze
+         baseline-analyze-with-hints
+         baseline-analyze
          rival-profile
          rival-set-profiling!
          rival-profiling-enabled?
@@ -166,6 +170,7 @@
 (define-rival rival_machine_new
               (_fun _pointer _pointer _size _pointer _size _pointer _uint32 _size -> _pointer))
 (define-rival rival_machine_free (_fun _pointer -> _void))
+(define-rival rival_machine_configure_baseline (_fun _pointer -> _stdbool))
 (define-rival rival_machine_instruction_count (_fun _pointer -> _size))
 (define-rival rival_machine_var_count (_fun _pointer -> _size))
 (define-rival rival_machine_expr_count (_fun _pointer -> _size))
@@ -177,7 +182,12 @@
 (define-rival rival_apply
               (_fun _pointer _pointer _size _pointer _size _pointer _size _uint32 -> _rival-error))
 
+(define-rival rival_apply_baseline
+              (_fun _pointer _pointer _size _pointer _size _pointer _uint32 -> _rival-error))
+
 (define-rival rival_analyze_with_hints (_fun _pointer _pointer _size _pointer -> _analyze-result))
+(define-rival rival_analyze_baseline_with_hints
+              (_fun _pointer _pointer _size _pointer -> _analyze-result))
 
 (define-rival rival_hints_free (_fun _pointer -> _void))
 (define-rival rival_hints_len (_fun _pointer -> _size))
@@ -439,6 +449,12 @@
   (register-finalizer wrapper machine-destroy)
   wrapper)
 
+(define (baseline-compile exprs vars discs)
+  (define machine (rival-compile exprs vars discs))
+  (unless (rival_machine_configure_baseline (machine-wrapper-ptr machine))
+    (error 'baseline-compile "Failed to configure baseline machine"))
+  machine)
+
 (define (rival-apply machine pt [hints #f])
   (define n-args (vector-length pt))
   (define arg-ptrs (machine-wrapper-arg-buf machine))
@@ -477,6 +493,43 @@
     ['panic (error 'rival-apply "Rival panic")]
     [else (error 'rival-apply "Unknown result code: ~a" status-code)]))
 
+(define (baseline-apply machine pt [hints #f])
+  (define n-args (vector-length pt))
+  (define arg-ptrs (machine-wrapper-arg-buf machine))
+
+  (when (> n-args 0)
+    (for ([i (in-range n-args)]
+          [bf (in-vector pt)])
+      (ptr-set! arg-ptrs _mpfr-pointer i bf)))
+
+  (define n-outs (machine-wrapper-n-exprs machine))
+  (define out-bfs (machine-wrapper-out-bfs machine))
+  (define out-ptrs (machine-wrapper-out-buf machine))
+
+  (define hints-ptr (and hints (hints-wrapper-ptr hints)))
+  (define args-to-pass (and (> n-args 0) arg-ptrs))
+
+  (define status-code
+    (rival_apply_baseline (machine-wrapper-ptr machine)
+                          args-to-pass
+                          n-args
+                          out-ptrs
+                          n-outs
+                          hints-ptr
+                          (*rival-max-precision*)))
+
+  (match status-code
+    ['ok
+     (define discs (machine-wrapper-discs machine))
+     (for/vector #:length n-outs
+                 ([bf (in-vector out-bfs)]
+                  [disc (in-list discs)])
+       ((discretization-convert disc) bf))]
+    ['invalid_input (raise (exn:rival:invalid "Invalid input" (current-continuation-marks) pt))]
+    ['unsamplable (raise (exn:rival:unsamplable "Unsamplable input" (current-continuation-marks) pt))]
+    ['panic (error 'baseline-apply "Rival panic")]
+    [else (error 'baseline-apply "Unknown result code: ~a" status-code)]))
+
 (define (rival-analyze-with-hints machine rect [hint #f])
   (define n-args (vector-length rect))
   (define rect-ptrs (machine-wrapper-rect-buf machine))
@@ -511,6 +564,41 @@
 
 (define (rival-analyze machine rect)
   (car (rival-analyze-with-hints machine rect)))
+
+(define (baseline-analyze-with-hints machine rect [hint #f])
+  (define n-args (vector-length rect))
+  (define rect-ptrs (machine-wrapper-rect-buf machine))
+
+  (for ([i (in-range n-args)]
+        [iv (in-vector rect)])
+    (ptr-set! rect-ptrs _mpfr-pointer (* 2 i) (ival-lo iv))
+    (ptr-set! rect-ptrs _mpfr-pointer (+ (* 2 i) 1) (ival-hi iv)))
+
+  (define hint-ptr
+    (if hint
+        (hints-wrapper-ptr hint)
+        #f))
+
+  (match-define (list status-code is-error maybe-error converged hints-ptr)
+    (rival_analyze_baseline_with_hints (machine-wrapper-ptr machine) rect-ptrs n-args hint-ptr))
+
+  (match status-code
+    ['panic (error 'baseline-analyze-with-hints "Rival panic")]
+    ['invalid_input (raise (exn:rival:invalid "Invalid input" (current-continuation-marks) rect))]
+    ['ok (void)]
+    [else (error 'baseline-analyze-with-hints "Unknown result code: ~a" status-code)])
+
+  (define new-hints
+    (if hints-ptr
+        (let ([wrapper (hints-wrapper hints-ptr)])
+          (register-finalizer wrapper hints-destroy)
+          wrapper)
+        #f))
+
+  (list (ival is-error maybe-error) new-hints converged))
+
+(define (baseline-analyze machine rect)
+  (car (baseline-analyze-with-hints machine rect)))
 
 (define (rival-profile machine param)
   (match param

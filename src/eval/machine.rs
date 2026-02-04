@@ -245,6 +245,23 @@ impl<D: Discretization> Machine<D> {
         self.instructions.len()
     }
 
+    /// Reconfigure the machine to use the baseline strategy
+    pub fn configure_baseline(&mut self) {
+        let var_count = self.arguments.len();
+        let start_prec = self.disc.target().saturating_add(10);
+
+        self.initial_precisions.fill(start_prec);
+        self.best_known_precisions.fill(0);
+
+        self.initial_repeats = make_initial_repeats(
+            &self.instructions,
+            var_count,
+            &mut self.registers,
+            &self.initial_precisions,
+            &mut self.best_known_precisions,
+        );
+    }
+
     /// Return a snapshot of recorded executions and reset the internal buffer pointer.
     pub fn take_executions(&mut self) -> Vec<Execution> {
         let slice = self.profiler.records().to_vec();

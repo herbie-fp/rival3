@@ -261,6 +261,8 @@ void rival_hints_free(struct RivalHints *hints);
 
 uintptr_t rival_hints_len(const struct RivalHints *hints);
 
+bool rival_machine_configure_baseline(struct RivalMachine *machine);
+
 struct RivalMachine *rival_machine_new(const struct RivalExprArena *arena,
                                        const uint32_t *expr_handles,
                                        uintptr_t n_exprs,
@@ -287,10 +289,23 @@ RivalError rival_apply(struct RivalMachine *machine,
                        uintptr_t max_iterations,
                        uint32_t max_precision);
 
+RivalError rival_apply_baseline(struct RivalMachine *machine,
+                                const mpfr_t *const *args,
+                                uintptr_t n_args,
+                                mpfr_t *const *out,
+                                uintptr_t n_out,
+                                const struct RivalHints *hints,
+                                uint32_t max_precision);
+
 struct RivalAnalyzeResult rival_analyze_with_hints(struct RivalMachine *machine,
                                                    const mpfr_t *const *rect,
                                                    uintptr_t n_args,
                                                    const struct RivalHints *hints);
+
+struct RivalAnalyzeResult rival_analyze_baseline_with_hints(struct RivalMachine *machine,
+                                                            const mpfr_t *const *rect,
+                                                            uintptr_t n_args,
+                                                            const struct RivalHints *hints);
 
 RivalError rival_analyze(struct RivalMachine *machine,
                          const mpfr_t *const *rect,
