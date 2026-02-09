@@ -26,8 +26,8 @@ impl<D: Discretization> Machine<D> {
             &hint_storage
         };
 
-        // Run iterations [0, max_iterations)
-        for iteration in 0..max_iterations {
+        // Run iterations [0, max_iterations]
+        for iteration in 0..=max_iterations {
             if let Some(results) = self.run_iteration(iteration, hint_slice)? {
                 return Ok(results);
             }
