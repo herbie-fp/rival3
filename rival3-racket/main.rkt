@@ -259,7 +259,10 @@
     ;; Variables
     [(? symbol?) (rival_expr_var arena (symbol->string expr))]
     ;; Numeric literals
-    [(? exact-integer?) (rival_expr_bigint arena (number->string expr))]
+    [(? exact-integer?)
+     (if (<= (integer-length (abs expr)) (bf-precision))
+         (rival_expr_bigint arena (number->string expr))
+         (rival_expr_bigrational arena (number->string expr) "1"))]
     [(? rational?)
      (if (integer? expr)
          (rival_expr_bigint arena (number->string (inexact->exact expr)))
