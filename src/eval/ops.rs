@@ -657,8 +657,6 @@ def_ops! {
                     (Erf(x), Literal(one)) if *one == 1.0 => {
                         Neg(Box::new(Erfc(x.clone())))
                     }
-                    // (- x x) => 0
-                    (x, y) if x == y => Literal(Float::with_val(53, 0.0)),
                     _ => Sub(Box::new(lhs), Box::new(rhs))
                 }
             },
