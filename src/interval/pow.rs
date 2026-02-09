@@ -38,6 +38,10 @@ impl Ival {
 
             self.assign_from(&neg_result);
             self.union_assign(pos_result);
+            if !(x.lo.immovable && x.hi.immovable) {
+                self.lo.immovable = false;
+                self.hi.immovable = false;
+            }
         }
     }
 

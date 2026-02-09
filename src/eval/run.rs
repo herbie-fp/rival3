@@ -98,7 +98,7 @@ impl<D: Discretization> Machine<D> {
         let (good, _done, bad, stuck) = self.return_flags();
         let (next_hint, converged) = self.make_hint(hint_slice);
 
-        let status = Ival::bool_interval(bad || stuck, !good);
+        let status = Ival::bool_interval(bad || stuck, (!good) || stuck);
         (status, next_hint, converged)
     }
 
@@ -148,7 +148,7 @@ impl<D: Discretization> Machine<D> {
         let (good, _done, bad, stuck) = self.return_flags();
         let (next_hint, converged) = self.make_hint(hint_slice);
 
-        let status = Ival::bool_interval(bad || stuck, !good);
+        let status = Ival::bool_interval(bad || stuck, (!good) || stuck);
         (status, next_hint, converged)
     }
 
@@ -289,8 +289,7 @@ impl<D: Discretization> Machine<D> {
                     });
                 }
 
-                let no_need_to_reevaluate =
-                    is_constant && new_prec <= best_known && inputs_stable;
+                let no_need_to_reevaluate = is_constant && new_prec <= best_known && inputs_stable;
                 let result_is_exact_already = !useful[idx];
                 let repeat = result_is_exact_already || no_need_to_reevaluate;
 

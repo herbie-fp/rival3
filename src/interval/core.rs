@@ -341,18 +341,60 @@ impl Ival {
     }
 
     pub fn fmin_assign(&mut self, a: &Ival, b: &Ival) {
-        self.lo.immovable =
-            endpoint_minmax(mpfr_min, &a.lo, &b.lo, self.lo.as_float_mut(), Round::Down);
-        self.hi.immovable =
-            endpoint_minmax(mpfr_min, &a.hi, &b.hi, self.hi.as_float_mut(), Round::Up);
+        let lo_exact = mpfr_min(
+            a.lo.as_float(),
+            b.lo.as_float(),
+            self.lo.as_float_mut(),
+            Round::Down,
+        );
+        let hi_exact = mpfr_min(
+            a.hi.as_float(),
+            b.hi.as_float(),
+            self.hi.as_float_mut(),
+            Round::Up,
+        );
+
+        let lo_stable = if a.lo.immovable && b.lo.immovable {
+            true
+        } else if a.lo.immovable {
+            a.lo.as_float() <= b.lo.as_float()
+        } else if b.lo.immovable {
+            b.lo.as_float() <= a.lo.as_float()
+        } else {
+            false
+        };
+
+        self.lo.immovable = lo_exact && lo_stable;
+        self.hi.immovable = hi_exact && a.hi.immovable && b.hi.immovable;
         self.err = a.err.union(&b.err);
     }
 
     pub fn fmax_assign(&mut self, a: &Ival, b: &Ival) {
-        self.lo.immovable =
-            endpoint_minmax(mpfr_max, &a.lo, &b.lo, self.lo.as_float_mut(), Round::Down);
-        self.hi.immovable =
-            endpoint_minmax(mpfr_max, &a.hi, &b.hi, self.hi.as_float_mut(), Round::Up);
+        let lo_exact = mpfr_max(
+            a.lo.as_float(),
+            b.lo.as_float(),
+            self.lo.as_float_mut(),
+            Round::Down,
+        );
+        let hi_exact = mpfr_max(
+            a.hi.as_float(),
+            b.hi.as_float(),
+            self.hi.as_float_mut(),
+            Round::Up,
+        );
+
+        let hi_stable = if a.hi.immovable && b.hi.immovable {
+            true
+        } else if a.hi.immovable {
+            a.hi.as_float() >= b.hi.as_float()
+        } else if b.hi.immovable {
+            b.hi.as_float() >= a.hi.as_float()
+        } else {
+            false
+        };
+
+        self.lo.immovable = lo_exact && a.lo.immovable && b.lo.immovable;
+        self.hi.immovable = hi_exact && hi_stable;
         self.err = a.err.union(&b.err);
     }
 
@@ -366,6 +408,7 @@ impl Ival {
         let can_zero = y_lo.is_zero() || y_hi.is_zero();
         let can_neg = mpfr_sign(y_lo) == -1 || can_zero;
         let can_pos = mpfr_sign(y_hi) == 1 || can_zero;
+        let sign_immovable = can_neg && can_pos && y.lo.immovable && y.hi.immovable;
 
         let err = y.err.union(&abs_x.err);
 
@@ -380,6 +423,10 @@ impl Ival {
                 self.hi.as_float_mut().assign(abs_x.hi.as_float());
                 self.hi.immovable = abs_x.hi.immovable;
                 self.err = err;
+                if !sign_immovable {
+                    self.lo.immovable = false;
+                    self.hi.immovable = false;
+                }
             }
             (true, false) => {
                 let prec = self.prec();
