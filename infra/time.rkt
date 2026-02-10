@@ -136,7 +136,7 @@
           (define name (execution-name exec))
           (define number (execution-number exec))
           (define precision (execution-precision exec))
-          (unless (equal? name 'adjust)
+          (unless (equal? (~a name) "adjust")
             (define precision* (hash-ref h (list name number) (λ () 0)))
             (hash-set! h (list name number) (max precision precision*))
             (set! max-prec (max precision precision* max-prec))))
