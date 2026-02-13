@@ -54,6 +54,15 @@
 (define (bf->bool x)
   (and (not (bfzero? x)) #t))
 
+(define (exactly-representable-at-current-bf-precision? x)
+  (define lo
+    (parameterize ([bf-rounding-mode 'down])
+      (bf x)))
+  (define hi
+    (parameterize ([bf-rounding-mode 'up])
+      (bf x)))
+  (equal? lo hi))
+
 (define boolean-discretization (discretization 53 bf->bool (lambda (x y) (if (eq? x y) 0 2)) 'bool))
 (define flonum-discretization (discretization 53 bigfloat->flonum (compose abs flonums-between) 'f64))
 
@@ -260,7 +269,7 @@
     [(? symbol?) (rival_expr_var arena (symbol->string expr))]
     ;; Numeric literals
     [(? exact-integer?)
-     (if (<= (integer-length (abs expr)) (bf-precision))
+     (if (exactly-representable-at-current-bf-precision? expr)
          (rival_expr_bigint arena (number->string expr))
          (rival_expr_bigrational arena (number->string expr) "1"))]
     [(? rational?)
