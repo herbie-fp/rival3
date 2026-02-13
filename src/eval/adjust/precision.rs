@@ -214,15 +214,15 @@ pub(super) fn update_repeats<D: Discretization>(
             }
         });
 
-        let precision_has_increased = new_precision > reference;
-        if precision_has_increased || !children_repeat {
-            any_reevaluation = true;
-            if constant && precision_has_increased {
-                machine.best_known_precisions[idx] = new_precision;
-            }
-        } else {
-            repeats[idx] = true;
+        let precision_has_not_increased = new_precision <= reference && children_repeat;
+        let precision_has_increased = !precision_has_not_increased;
+        any_reevaluation |= precision_has_increased;
+
+        if constant && precision_has_increased {
+            machine.best_known_precisions[idx] = new_precision;
         }
+
+        repeats[idx] = precision_has_not_increased;
     }
 
     any_reevaluation
