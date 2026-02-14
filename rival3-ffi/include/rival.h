@@ -21,7 +21,6 @@ enum RivalError
     RIVAL_ERROR_OK = 0,
     RIVAL_ERROR_INVALID_INPUT = -1,
     RIVAL_ERROR_UNSAMPLABLE = -2,
-    RIVAL_ERROR_PANIC = -99,
 };
 #ifndef __cplusplus
 typedef int32_t RivalError;
