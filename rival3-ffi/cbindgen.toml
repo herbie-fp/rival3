@@ -10,16 +10,9 @@ includes = ["mpfr.h"]
 include = [
     "RivalError",
     "RivalDiscType",
-    "RivalApplyResult",
     "RivalAnalyzeResult",
     "RivalExecution",
 ]
-
-[export.rename]
-"RivalExpr" = "RivalExpr"
-"RivalMachine" = "RivalMachine"
-"RivalHints" = "RivalHints"
-"RivalDiscretization" = "RivalDiscretization"
 
 [fn]
 rename_args = "None"

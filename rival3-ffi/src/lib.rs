@@ -18,7 +18,6 @@ pub enum RivalError {
     Ok = 0,
     InvalidInput = -1,
     Unsamplable = -2,
-    Panic = -99,
 }
 
 pub const RIVAL_ABI_VERSION: u32 = 1;
@@ -34,6 +33,5 @@ pub extern "C" fn rival_error_message(error: RivalError) -> *const c_char {
         RivalError::Ok => c"Success".as_ptr(),
         RivalError::InvalidInput => c"Invalid input".as_ptr(),
         RivalError::Unsamplable => c"Unsamplable input".as_ptr(),
-        RivalError::Panic => c"Internal panic".as_ptr(),
     }
 }

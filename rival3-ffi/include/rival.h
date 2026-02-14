@@ -307,12 +307,6 @@ struct RivalAnalyzeResult rival_analyze_baseline_with_hints(struct RivalMachine 
                                                             uintptr_t n_args,
                                                             const struct RivalHints *hints);
 
-RivalError rival_analyze(struct RivalMachine *machine,
-                         const mpfr_t *const *rect,
-                         uintptr_t n_args,
-                         bool *is_error,
-                         bool *maybe_error);
-
 uintptr_t rival_profiler_count(const struct RivalMachine *machine);
 
 bool rival_profiler_get(const struct RivalMachine *machine,

@@ -1,4 +1,7 @@
-#lang racket
+#lang racket/base
+
+(require racket/match
+         racket/dict)
 
 (provide rival-functions
          rival-type
@@ -10,7 +13,6 @@
   (cons otype itypes))
 
 (define rival-functions
-  ;; Constants
   (hash 'PI
         (make-op 'real '())
         'E
@@ -23,7 +25,6 @@
         (make-op 'real '())
         'NAN
         (make-op 'real '())
-        ;; Arithmetic
         '+
         (make-op 'real '(real real))
         '-
@@ -34,13 +35,14 @@
         (make-op 'real '(real real))
         'neg
         (make-op 'real '(real))
-        ;; Math functions
         'sqrt
         (make-op 'real '(real))
         'cbrt
         (make-op 'real '(real))
         'pow
         (make-op 'real '(real real))
+        'pow2
+        (make-op 'real '(real))
         'exp
         (make-op 'real '(real))
         'exp2
@@ -87,10 +89,6 @@
         (make-op 'real '(real))
         'erfc
         (make-op 'real '(real))
-        'lgamma
-        (make-op 'real '(real))
-        'tgamma
-        (make-op 'real '(real))
         'rint
         (make-op 'real '(real))
         'round
@@ -119,14 +117,12 @@
         (make-op 'real '(real real real))
         'fabs
         (make-op 'real '(real))
-        ;; Logic
         'not
         (make-op 'bool '(bool))
         'and
         (make-op 'bool '(bool bool))
         'or
         (make-op 'bool '(bool bool))
-        ;; Comparison
         '==
         (make-op 'bool '(real real))
         '!=
@@ -139,7 +135,10 @@
         (make-op 'bool '(real real))
         '>=
         (make-op 'bool '(real real))
-        ;; Control
+        'assert
+        (make-op 'bool '(bool))
+        'error
+        (make-op 'bool '(real))
         'if
         (make-op 'real '(bool real real))))
 
@@ -147,7 +146,17 @@
   (match expr
     [(? number?) 'real]
     [(? symbol?) (dict-ref env expr)]
+    [(list 'if c t f)
+     (define ct (rival-type c env))
+     (define tt (rival-type t env))
+     (define ft (rival-type f env))
+     (and (equal? ct 'bool) (equal? tt ft) tt)]
+    [(list 'error a)
+     (define at (rival-type a env))
+     (and at 'bool)]
     [(list op args ...)
-     (match (hash-ref rival-functions op #f)
-       [#f (error 'rival-type "Unknown operator: ~a" op)]
-       [(cons otype itypes) otype])]))
+     (match-define (cons otype itypes) (hash-ref rival-functions op (cons #f '())))
+     (and (equal? (length itypes) (length args))
+          (andmap equal? itypes (map (lambda (a) (rival-type a env)) args))
+          otype)]
+    [_ #f]))

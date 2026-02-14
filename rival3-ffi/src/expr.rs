@@ -267,16 +267,6 @@ impl RivalExprArena {
     pub fn len(&self) -> usize {
         self.nodes.len()
     }
-
-    pub fn is_empty(&self) -> bool {
-        self.nodes.is_empty()
-    }
-}
-
-impl Default for RivalExprArena {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 #[unsafe(no_mangle)]
@@ -318,7 +308,10 @@ pub unsafe extern "C" fn rival_expr_var(arena: *mut RivalExprArena, name: *const
         return RIVAL_EXPR_INVALID;
     }
     unsafe {
-        let name_str = CStr::from_ptr(name).to_string_lossy().into_owned();
+        let name_str = match CStr::from_ptr(name).to_str() {
+            Ok(s) => s.to_owned(),
+            Err(_) => return RIVAL_EXPR_INVALID,
+        };
         (*arena).push(ArenaNode::Var(name_str))
     }
 }
@@ -328,7 +321,6 @@ pub unsafe extern "C" fn rival_expr_f64(arena: *mut RivalExprArena, value: f64) 
     if arena.is_null() {
         return RIVAL_EXPR_INVALID;
     }
-    // TODO: check if 53 is enough
     unsafe { (*arena).push(ArenaNode::Literal(Float::with_val(53, value))) }
 }
 

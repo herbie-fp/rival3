@@ -44,7 +44,7 @@ impl Discretization for RivalDiscretization {
 
         match disc_type {
             RivalDiscType::Bool => {
-                if lo.to_f64() == hi.to_f64() {
+                if lo == hi {
                     0
                 } else {
                     2
