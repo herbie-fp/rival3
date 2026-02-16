@@ -32,7 +32,8 @@ impl Ival {
             let mut neg_x = Ival::zero(x.max_prec());
             neg_x.exact_neg_assign(x);
             self.fmod_pos_assign(&neg_x, &y_abs);
-            self.neg_self_assign();
+            let tmp = self.clone();
+            self.neg_assign(&tmp);
         } else if lo_is_pos {
             self.fmod_pos_assign(x, &y_abs);
         } else {
@@ -48,7 +49,8 @@ impl Ival {
             neg_result.fmod_pos_assign(&neg_x, &y_abs);
             pos_result.fmod_pos_assign(&pos, &y_abs);
 
-            neg_result.neg_self_assign();
+            let tmp_neg = neg_result.clone();
+            neg_result.neg_assign(&tmp_neg);
 
             self.assign_from(&pos_result);
             self.union_assign(neg_result);
@@ -81,7 +83,8 @@ impl Ival {
             let mut neg_x = Ival::zero(x.max_prec());
             neg_x.exact_neg_assign(x);
             self.remainder_pos_assign(&neg_x, &y_abs);
-            self.neg_self_assign();
+            let tmp = self.clone();
+            self.neg_assign(&tmp);
         } else if lo_is_pos {
             self.remainder_pos_assign(x, &y_abs);
         } else {
@@ -97,7 +100,8 @@ impl Ival {
             neg_result.remainder_pos_assign(&neg_x, &y_abs);
             pos_result.remainder_pos_assign(&pos, &y_abs);
 
-            neg_result.neg_self_assign();
+            let tmp_neg = neg_result.clone();
+            neg_result.neg_assign(&tmp_neg);
 
             self.assign_from(&pos_result);
             self.union_assign(neg_result);
