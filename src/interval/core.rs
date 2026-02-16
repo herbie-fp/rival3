@@ -16,6 +16,101 @@ impl Ival {
         self.lo.as_float().prec().max(self.hi.as_float().prec())
     }
 
+    fn unary_assign_with_sources<F>(
+        &mut self,
+        mpfr_func: &F,
+        lo_val: &Float,
+        lo_immovable: bool,
+        hi_val: &Float,
+        hi_immovable: bool,
+        comonotonic: bool,
+    ) where
+        F: Fn(&Float, &mut Float, Round) -> bool,
+    {
+        if comonotonic {
+            self.lo.immovable = endpoint_unary_val(
+                mpfr_func,
+                hi_val,
+                hi_immovable,
+                self.lo.as_float_mut(),
+                Round::Down,
+            );
+            self.hi.immovable = endpoint_unary_val(
+                mpfr_func,
+                lo_val,
+                lo_immovable,
+                self.hi.as_float_mut(),
+                Round::Up,
+            );
+        } else {
+            self.lo.immovable = endpoint_unary_val(
+                mpfr_func,
+                lo_val,
+                lo_immovable,
+                self.lo.as_float_mut(),
+                Round::Down,
+            );
+            self.hi.immovable = endpoint_unary_val(
+                mpfr_func,
+                hi_val,
+                hi_immovable,
+                self.hi.as_float_mut(),
+                Round::Up,
+            );
+        }
+    }
+
+    fn clamped_unary_assign<F>(
+        &mut self,
+        mpfr_func: &F,
+        a: &Ival,
+        lo_bound: &Float,
+        hi_bound: &Float,
+        strict: bool,
+        comonotonic: bool,
+    ) where
+        F: Fn(&Float, &mut Float, Round) -> bool,
+    {
+        let x_lo = a.lo.as_float();
+        let x_hi = a.hi.as_float();
+
+        let (partial_err, total_err) = if strict {
+            (
+                x_lo <= lo_bound || x_hi >= hi_bound,
+                x_hi <= lo_bound || x_lo >= hi_bound,
+            )
+        } else {
+            (
+                x_lo < lo_bound || x_hi > hi_bound,
+                x_hi < lo_bound || x_lo > hi_bound,
+            )
+        };
+        self.err = ErrorFlags::new(a.err.partial || partial_err, a.err.total || total_err);
+
+        let force_zero_pair = !strict && lo_bound.is_zero() && x_hi.is_zero();
+        let lo_val = if force_zero_pair || x_lo < lo_bound {
+            lo_bound
+        } else {
+            x_lo
+        };
+        let hi_val = if force_zero_pair {
+            lo_bound
+        } else if x_hi > hi_bound {
+            hi_bound
+        } else {
+            x_hi
+        };
+
+        self.unary_assign_with_sources(
+            mpfr_func,
+            lo_val,
+            a.lo.immovable,
+            hi_val,
+            a.hi.immovable,
+            comonotonic,
+        );
+    }
+
     pub fn monotonic_assign<F>(&mut self, mpfr_func: &F, a: &Ival)
     where
         F: Fn(&Float, &mut Float, Round) -> bool,
@@ -34,17 +129,25 @@ impl Ival {
         self.err = a.err;
     }
 
-    pub fn overflows_loose_at(&mut self, a: &Ival, lo: Float, hi: Float) {
+    pub fn overflows_loose_at(&mut self, a: &Ival, hi: &Float) {
         let x_lo = a.lo.as_float();
         let x_hi = a.hi.as_float();
 
-        self.lo.immovable = self.lo.immovable || x_hi <= &lo || (x_lo <= &lo && a.lo.immovable);
-        self.hi.immovable = self.hi.immovable || x_lo >= &hi || (x_hi >= &hi && a.hi.immovable);
+        self.lo.immovable = self.lo.immovable
+            || le_neg_threshold(x_hi, hi)
+            || (le_neg_threshold(x_lo, hi) && a.lo.immovable);
+        self.hi.immovable = self.hi.immovable || x_lo >= hi || (x_hi >= hi && a.hi.immovable);
         self.err = a.err;
     }
 
     pub fn neg_assign(&mut self, a: &Ival) {
         self.comonotonic_assign(&mpfr_neg, a);
+    }
+
+    pub fn neg_self_assign(&mut self) {
+        std::mem::swap(&mut self.lo, &mut self.hi);
+        self.lo.as_float_mut().neg_assign();
+        self.hi.as_float_mut().neg_assign();
     }
 
     pub fn exact_neg_assign(&mut self, a: &Ival) {
@@ -120,11 +223,9 @@ impl Ival {
     }
 
     pub fn sqrt_assign(&mut self, a: &Ival) {
-        // TODO: To get rid of all these clones when clamping, we can add inplace operators to mpfr.rs
-        let mut clamped = a.clone();
-        clamped.clamp(zero(self.prec()), inf(self.prec()));
-        self.err = clamped.err;
-        self.monotonic_assign(&mpfr_sqrt, &clamped);
+        let lo = zero(self.prec());
+        let hi = inf(self.prec());
+        self.clamped_unary_assign(&mpfr_sqrt, a, &lo, &hi, false, false);
     }
 
     pub fn cbrt_assign(&mut self, a: &Ival) {
@@ -134,54 +235,43 @@ impl Ival {
     pub fn exp_assign(&mut self, a: &Ival) {
         self.monotonic_assign(&mpfr_exp, a);
         let thresh = exp_overflow_threshold(self.prec());
-        let mut neg = thresh.clone();
-        neg.neg_assign();
-        self.overflows_loose_at(a, neg, thresh);
+        self.overflows_loose_at(a, &thresh);
     }
 
     pub fn exp2_assign(&mut self, a: &Ival) {
         self.monotonic_assign(&mpfr_exp2, a);
         let thresh = exp2_overflow_threshold(self.prec());
-        let mut neg = thresh.clone();
-        neg.neg_assign();
-        self.overflows_loose_at(a, neg, thresh);
+        self.overflows_loose_at(a, &thresh);
     }
 
     pub fn expm1_assign(&mut self, a: &Ival) {
         self.monotonic_assign(&mpfr_expm1, a);
         let thresh = exp_overflow_threshold(self.prec());
-        let mut neg = thresh.clone();
-        neg.neg_assign();
-        self.overflows_at(a, neg, thresh);
+        self.overflows_at(a, &thresh);
     }
 
     pub fn log_assign(&mut self, a: &Ival) {
-        let mut clamped = a.clone();
-        clamped.clamp_strict(zero(self.prec()), inf(self.prec()));
-        self.err = clamped.err;
-        self.monotonic_assign(&mpfr_log, &clamped);
+        let lo = zero(self.prec());
+        let hi = inf(self.prec());
+        self.clamped_unary_assign(&mpfr_log, a, &lo, &hi, true, false);
     }
 
     pub fn log2_assign(&mut self, a: &Ival) {
-        let mut clamped = a.clone();
-        clamped.clamp_strict(zero(self.prec()), inf(self.prec()));
-        self.err = clamped.err;
-        self.monotonic_assign(&mpfr_log2, &clamped);
+        let lo = zero(self.prec());
+        let hi = inf(self.prec());
+        self.clamped_unary_assign(&mpfr_log2, a, &lo, &hi, true, false);
     }
 
     pub fn log10_assign(&mut self, a: &Ival) {
-        let mut clamped = a.clone();
-        clamped.clamp_strict(zero(self.prec()), inf(self.prec()));
-        self.err = clamped.err;
-        self.monotonic_assign(&mpfr_log10, &clamped);
+        let lo = zero(self.prec());
+        let hi = inf(self.prec());
+        self.clamped_unary_assign(&mpfr_log10, a, &lo, &hi, true, false);
     }
 
     pub fn log1p_assign(&mut self, a: &Ival) {
-        let mut clamped = a.clone();
         let neg_one = Float::with_val(self.prec(), -1);
-        clamped.clamp_strict(neg_one, inf(self.prec()));
-        self.err = clamped.err;
-        self.monotonic_assign(&mpfr_log1p, &clamped);
+        let hi = inf(self.prec());
+        self.clamped_unary_assign(&mpfr_log1p, a, &neg_one, &hi, true, false);
     }
 
     pub fn logb_assign(&mut self, a: &Ival) {
@@ -194,21 +284,15 @@ impl Ival {
     }
 
     pub fn asin_assign(&mut self, a: &Ival) {
-        let mut clamped = a.clone();
         let one = Float::with_val(self.prec(), 1);
         let neg_one = Float::with_val(self.prec(), -1);
-        clamped.clamp(neg_one, one);
-        self.err = clamped.err;
-        self.monotonic_assign(&mpfr_asin, &clamped);
+        self.clamped_unary_assign(&mpfr_asin, a, &neg_one, &one, false, false);
     }
 
     pub fn acos_assign(&mut self, a: &Ival) {
-        let mut clamped = a.clone();
         let one = Float::with_val(self.prec(), 1);
         let neg_one = Float::with_val(self.prec(), -1);
-        clamped.clamp(neg_one, one);
-        self.err = clamped.err;
-        self.comonotonic_assign(&mpfr_acos, &clamped);
+        self.clamped_unary_assign(&mpfr_acos, a, &neg_one, &one, false, true);
     }
 
     pub fn atan_assign(&mut self, a: &Ival) {
@@ -272,9 +356,7 @@ impl Ival {
     pub fn sinh_assign(&mut self, a: &Ival) {
         self.monotonic_assign(&mpfr_sinh, a);
         let thresh = sinh_overflow_threshold(self.prec());
-        let mut neg = thresh.clone();
-        neg.neg_assign();
-        self.overflows_at(a, neg, thresh);
+        self.overflows_at(a, &thresh);
     }
 
     pub fn cosh_assign(&mut self, a: &Ival) {
@@ -282,9 +364,7 @@ impl Ival {
         abs_a.exact_fabs_assign(a);
         self.monotonic_assign(&mpfr_cosh, &abs_a);
         let thresh = acosh_overflow_threshold(self.prec());
-        let mut neg = thresh.clone();
-        neg.neg_assign();
-        self.overflows_at(&abs_a, neg, thresh);
+        self.overflows_at(&abs_a, &thresh);
     }
 
     pub fn tanh_assign(&mut self, a: &Ival) {
@@ -296,20 +376,15 @@ impl Ival {
     }
 
     pub fn acosh_assign(&mut self, a: &Ival) {
-        let mut clamped = a.clone();
         let one = Float::with_val(self.prec(), 1);
-        clamped.clamp(one, inf(self.prec()));
-        self.err = clamped.err;
-        self.monotonic_assign(&mpfr_acosh, &clamped);
+        let hi = inf(self.prec());
+        self.clamped_unary_assign(&mpfr_acosh, a, &one, &hi, false, false);
     }
 
     pub fn atanh_assign(&mut self, a: &Ival) {
-        let mut clamped = a.clone();
         let one = Float::with_val(self.prec(), 1);
         let neg_one = Float::with_val(self.prec(), -1);
-        clamped.clamp_strict(neg_one, one);
-        self.err = clamped.err;
-        self.monotonic_assign(&mpfr_atanh, &clamped);
+        self.clamped_unary_assign(&mpfr_atanh, a, &neg_one, &one, true, false);
     }
 
     pub fn erf_assign(&mut self, a: &Ival) {
@@ -455,12 +530,12 @@ impl Ival {
         }
     }
 
-    fn overflows_at(&mut self, a: &Ival, lo: Float, hi: Float) {
+    fn overflows_at(&mut self, a: &Ival, hi: &Float) {
         let x_lo = a.lo.as_float();
         let x_hi = a.hi.as_float();
 
-        self.lo.immovable = self.lo.immovable || (x_hi <= &lo && a.lo.immovable);
-        self.hi.immovable = self.hi.immovable || (x_lo >= &hi && a.hi.immovable);
+        self.lo.immovable = self.lo.immovable || (le_neg_threshold(x_hi, hi) && a.lo.immovable);
+        self.hi.immovable = self.hi.immovable || (x_lo >= hi && a.hi.immovable);
     }
 }
 
@@ -474,6 +549,24 @@ pub fn endpoint_unary(
     let v = ep.as_float();
     let exact = f(v, out, rnd);
     ep.immovable && exact
+}
+
+#[must_use]
+fn endpoint_unary_val(
+    f: impl FnOnce(&Float, &mut Float, Round) -> bool,
+    val: &Float,
+    immovable: bool,
+    out: &mut Float,
+    rnd: Round,
+) -> bool {
+    let exact = f(val, out, rnd);
+    immovable && exact
+}
+
+#[inline]
+#[must_use]
+fn le_neg_threshold(x: &Float, threshold: &Float) -> bool {
+    !x.is_nan() && mpfr_sign(x) == -1 && mpfr_cmpabs(x, threshold) >= 0
 }
 
 #[must_use]
