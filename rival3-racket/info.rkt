@@ -5,4 +5,4 @@
 
 (define pkg-desc "Racket bindings to Rival3")
 
-(define deps '(("base" #:version "8.0")))
+(define deps '(("base" #:version "8.0") "math-lib"))
