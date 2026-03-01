@@ -5,6 +5,7 @@ use rug::{
 };
 
 use crate::mpfr::zero;
+use rug::ops::NegAssign;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Endpoint {
@@ -74,6 +75,18 @@ impl Ival {
     pub fn set_prec(&mut self, prec: u32) {
         self.lo.as_float_mut().set_prec(prec);
         self.hi.as_float_mut().set_prec(prec);
+    }
+
+    pub fn max_prec(&self) -> u32 {
+        // Assumed that the lo and high precisions are always the same
+        // This is ony enforced in Ival::new however
+        self.lo.as_float().prec()
+    }
+
+    pub fn neg_inplace(&mut self) {
+        self.lo.as_float_mut().neg_assign();
+        self.hi.as_float_mut().neg_assign();
+        std::mem::swap(&mut self.lo, &mut self.hi);
     }
 
     pub fn from_lo_hi(lo: Float, hi: Float) -> Self {

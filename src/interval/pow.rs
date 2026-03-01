@@ -151,8 +151,7 @@ impl Ival {
 
                 if mpfr_odd(y_lo) {
                     self.pow_pos_assign(&abs_x, y);
-                    let tmp = self.clone();
-                    self.neg_assign(&tmp);
+                    self.neg_inplace();
                 } else {
                     self.pow_pos_assign(&abs_x, y);
                 }

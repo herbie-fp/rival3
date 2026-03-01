@@ -192,9 +192,9 @@ fn assign_union(out: &mut Ival, a: &Ival, b: &Ival) {
     }
 
     // Helper to assign endpoint based on comparison
-    let assign_endpoint = |out_ep: &mut super::value::Endpoint,
-                           a_ep: &super::value::Endpoint,
-                           b_ep: &super::value::Endpoint,
+    let assign_endpoint = |out_ep: &mut Endpoint,
+                           a_ep: &Endpoint,
+                           b_ep: &Endpoint,
                            prefer_smaller: bool| {
         match a_ep.val.cmp(&b_ep.val) {
             Ordering::Equal => {

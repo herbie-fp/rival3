@@ -12,10 +12,6 @@ use crate::mpfr::{
 use rug::{Assign, Float, float::Round, ops::NegAssign};
 
 impl Ival {
-    pub fn max_prec(&self) -> u32 {
-        self.lo.as_float().prec().max(self.hi.as_float().prec())
-    }
-
     pub fn monotonic_assign<F>(&mut self, mpfr_func: &F, a: &Ival)
     where
         F: Fn(&Float, &mut Float, Round) -> bool,
@@ -123,7 +119,6 @@ impl Ival {
         // TODO: To get rid of all these clones when clamping, we can add inplace operators to mpfr.rs
         let mut clamped = a.clone();
         clamped.clamp(zero(self.prec()), inf(self.prec()));
-        self.err = clamped.err;
         self.monotonic_assign(&mpfr_sqrt, &clamped);
     }
 
@@ -158,21 +153,18 @@ impl Ival {
     pub fn log_assign(&mut self, a: &Ival) {
         let mut clamped = a.clone();
         clamped.clamp_strict(zero(self.prec()), inf(self.prec()));
-        self.err = clamped.err;
         self.monotonic_assign(&mpfr_log, &clamped);
     }
 
     pub fn log2_assign(&mut self, a: &Ival) {
         let mut clamped = a.clone();
         clamped.clamp_strict(zero(self.prec()), inf(self.prec()));
-        self.err = clamped.err;
         self.monotonic_assign(&mpfr_log2, &clamped);
     }
 
     pub fn log10_assign(&mut self, a: &Ival) {
         let mut clamped = a.clone();
         clamped.clamp_strict(zero(self.prec()), inf(self.prec()));
-        self.err = clamped.err;
         self.monotonic_assign(&mpfr_log10, &clamped);
     }
 
@@ -180,7 +172,6 @@ impl Ival {
         let mut clamped = a.clone();
         let neg_one = Float::with_val(self.prec(), -1);
         clamped.clamp_strict(neg_one, inf(self.prec()));
-        self.err = clamped.err;
         self.monotonic_assign(&mpfr_log1p, &clamped);
     }
 
@@ -198,7 +189,6 @@ impl Ival {
         let one = Float::with_val(self.prec(), 1);
         let neg_one = Float::with_val(self.prec(), -1);
         clamped.clamp(neg_one, one);
-        self.err = clamped.err;
         self.monotonic_assign(&mpfr_asin, &clamped);
     }
 
@@ -207,7 +197,6 @@ impl Ival {
         let one = Float::with_val(self.prec(), 1);
         let neg_one = Float::with_val(self.prec(), -1);
         clamped.clamp(neg_one, one);
-        self.err = clamped.err;
         self.comonotonic_assign(&mpfr_acos, &clamped);
     }
 
@@ -299,7 +288,6 @@ impl Ival {
         let mut clamped = a.clone();
         let one = Float::with_val(self.prec(), 1);
         clamped.clamp(one, inf(self.prec()));
-        self.err = clamped.err;
         self.monotonic_assign(&mpfr_acosh, &clamped);
     }
 
@@ -308,7 +296,6 @@ impl Ival {
         let one = Float::with_val(self.prec(), 1);
         let neg_one = Float::with_val(self.prec(), -1);
         clamped.clamp_strict(neg_one, one);
-        self.err = clamped.err;
         self.monotonic_assign(&mpfr_atanh, &clamped);
     }
 

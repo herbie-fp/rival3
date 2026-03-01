@@ -9,6 +9,18 @@ pub struct Execution {
     pub iteration: usize,
 }
 
+impl Default for Execution {
+    fn default() -> Self {
+        Execution {
+            name: "",
+            number: 0,
+            precision: 0,
+            time_ms: 0.0,
+            iteration: 0,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Profiler {
     records: Vec<Execution>,
@@ -19,16 +31,7 @@ impl Profiler {
     /// Create a profiler with a fixed capacity (number of records)
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            records: vec![
-                Execution {
-                    name: "",
-                    number: 0,
-                    precision: 0,
-                    time_ms: 0.0,
-                    iteration: 0
-                };
-                capacity
-            ],
+            records: vec![Execution::default(); capacity],
             ptr: 0,
         }
     }
