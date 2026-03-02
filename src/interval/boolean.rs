@@ -192,11 +192,11 @@ fn assign_union(out: &mut Ival, a: &Ival, b: &Ival) {
     }
 
     // Helper to assign endpoint based on comparison
-    let assign_endpoint = |out_ep: &mut Endpoint,
-                           a_ep: &Endpoint,
-                           b_ep: &Endpoint,
-                           prefer_smaller: bool| {
-        match a_ep.val.cmp(&b_ep.val) {
+    let assign_endpoint =
+        |out_ep: &mut Endpoint, a_ep: &Endpoint, b_ep: &Endpoint, prefer_smaller: bool| match a_ep
+            .val
+            .cmp(&b_ep.val)
+        {
             Ordering::Equal => {
                 out_ep.as_float_mut().assign(a_ep.as_float());
                 out_ep.immovable = a_ep.immovable || b_ep.immovable;
@@ -213,8 +213,7 @@ fn assign_union(out: &mut Ival, a: &Ival, b: &Ival) {
                 out_ep.as_float_mut().assign(b_ep.as_float());
                 out_ep.immovable = b_ep.immovable;
             }
-        }
-    };
+        };
 
     assign_endpoint(&mut out.lo, &a.lo, &b.lo, true);
     assign_endpoint(&mut out.hi, &a.hi, &b.hi, false);

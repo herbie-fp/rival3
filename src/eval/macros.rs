@@ -1,7 +1,6 @@
 //! Macro for defining interval operations and generated helpers
 //! Provides enums, dispatch, optimization, and path reduction wiring
 //! TODO: Split up this macro to make it easier to use/extend
-#[macro_export]
 macro_rules! def_ops {
     (
         constant {
@@ -549,3 +548,5 @@ macro_rules! def_ops {
         }
     }};
 }
+
+pub(crate) use def_ops;

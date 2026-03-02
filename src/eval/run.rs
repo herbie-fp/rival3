@@ -108,7 +108,7 @@ impl<D: Discretization> Machine<D> {
     }
 
     /// Run a single iteration with precision tuning and hint-guided evaluation
-    pub fn run_iteration(
+    pub(crate) fn run_iteration(
         &mut self,
         iteration: usize,
         hints: &[Hint],
@@ -158,7 +158,7 @@ impl<D: Discretization> Machine<D> {
     }
 
     /// Load argument intervals into the front of the register file
-    pub fn load_arguments(&mut self, args: &[Ival]) {
+    pub(crate) fn load_arguments(&mut self, args: &[Ival]) {
         assert_eq!(args.len(), self.arguments.len(), "Argument count mismatch");
         for (i, arg) in args.iter().cloned().enumerate() {
             self.registers[i] = arg;

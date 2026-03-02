@@ -1,10 +1,10 @@
-pub mod arithmetic;
-pub mod boolean;
-pub mod constants;
-pub mod core;
-pub mod fmod;
-pub mod pow;
-pub mod trig;
-pub mod value;
+pub(crate) mod arithmetic;
+pub(crate) mod boolean;
+pub(crate) mod constants;
+pub(crate) mod core;
+pub(crate) mod fmod;
+pub(crate) mod pow;
+pub(crate) mod trig;
+pub(crate) mod value;
 
-pub use value::{Endpoint, ErrorFlags, Ival};
+pub use value::{ErrorFlags, Ival};

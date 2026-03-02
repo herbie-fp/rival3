@@ -13,7 +13,7 @@ use precision::{precision_tuning, update_repeats};
 
 impl<D: Discretization> Machine<D> {
     /// Adjust precision and repeats using the backward tuning pass
-    pub fn adjust(&mut self, hints: &[Hint]) -> bool {
+    pub(crate) fn adjust(&mut self, hints: &[Hint]) -> bool {
         assert_eq!(hints.len(), self.instructions.len(), "hint length mismatch");
         if self.iteration == 0 {
             return false;
@@ -22,7 +22,7 @@ impl<D: Discretization> Machine<D> {
     }
 
     /// Compute hints indicating which instructions should be executed, skipped, or aliased
-    pub fn make_hint(&self, old_hint: &[Hint]) -> (Vec<Hint>, bool) {
+    pub(crate) fn make_hint(&self, old_hint: &[Hint]) -> (Vec<Hint>, bool) {
         let len = self.instructions.len();
         let mut hints = vec![Hint::Skip; len];
         let mut converged = old_hint.len() == len;

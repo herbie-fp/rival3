@@ -1,10 +1,10 @@
 //! Interval expression evaluation pipeline
 
-pub mod machine;
-pub mod profile;
-pub mod run;
+pub(crate) mod machine;
+pub(crate) mod profile;
+pub(crate) mod run;
 
-pub mod ast {
+pub(crate) mod ast {
     pub use super::ops::Expr;
 }
 

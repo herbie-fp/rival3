@@ -26,39 +26,38 @@ pub trait Discretization: Clone {
 
 /// Interval evaluation machine with persistent state and discretization
 pub struct Machine<D: Discretization> {
-    pub disc: D,
+    pub(crate) disc: D,
 
     // Program structure
-    pub arguments: Vec<String>,
-    pub instructions: Vec<Instruction>,
-    pub outputs: Vec<usize>,
+    pub(crate) arguments: Vec<String>,
+    pub(crate) instructions: Vec<Instruction>,
+    pub(crate) outputs: Vec<usize>,
 
     // Initial state computed during compilation
-    pub initial_repeats: Vec<bool>,
-    pub initial_precisions: Vec<u32>,
-    pub best_known_precisions: Vec<u32>,
-    pub default_hint: Vec<Hint>,
+    pub(crate) initial_repeats: Vec<bool>,
+    pub(crate) initial_precisions: Vec<u32>,
+    pub(crate) best_known_precisions: Vec<u32>,
+    pub(crate) default_hint: Vec<Hint>,
 
     // Runtime state
-    pub registers: Vec<Ival>,
-    pub precisions: Vec<u32>,
-    pub repeats: Vec<bool>,         // true = skip execution (no change needed)
-    pub output_distance: Vec<bool>, // true = output near discretization boundary
+    pub(crate) registers: Vec<Ival>,
+    pub(crate) precisions: Vec<u32>,
+    pub(crate) repeats: Vec<bool>, // true = skip execution (no change needed)
+    pub(crate) output_distance: Vec<bool>, // true = output near discretization boundary
 
-    pub iteration: usize,
-    pub bumps: usize, // Number of times bumps mode has been activated
+    pub(crate) iteration: usize,
+    pub(crate) bumps: usize, // Number of times bumps mode has been activated
 
     // Profiling
-    pub profiler: Profiler,
-    pub profiling_enabled: bool,
+    pub(crate) profiler: Profiler,
+    pub(crate) profiling_enabled: bool,
 
     // Configuration parameters
-    pub max_precision: u32,
-    pub min_precision: u32,
-    pub lower_bound_early_stopping: bool,
-    pub slack_unit: i64,
-    pub bumps_activated: bool,
-    pub ampl_tuning_bits: u32,
+    pub(crate) max_precision: u32,
+    pub(crate) min_precision: u32,
+    pub(crate) lower_bound_early_stopping: bool,
+    pub(crate) slack_unit: i64,
+    pub(crate) bumps_activated: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -77,7 +76,7 @@ pub enum Hint {
 }
 
 #[derive(Clone, Debug)]
-pub struct PathOutcome {
+pub(crate) struct PathOutcome {
     pub hint: Hint,
     pub converged: bool,
 }
@@ -214,7 +213,6 @@ impl<D: Discretization> MachineBuilder<D> {
             lower_bound_early_stopping: false,
             slack_unit: self.slack_unit,
             bumps_activated: false,
-            ampl_tuning_bits: self.ampl_tuning_bits,
             profiler: Profiler::with_capacity(self.profile_capacity),
             profiling_enabled: self.profiling_enabled,
         }
@@ -224,7 +222,7 @@ impl<D: Discretization> MachineBuilder<D> {
 impl<D: Discretization> Machine<D> {
     /// Return the instruction index that writes to the given register when applicable
     #[inline]
-    pub fn register_to_instruction(&self, register: usize) -> Option<usize> {
+    pub(crate) fn register_to_instruction(&self, register: usize) -> Option<usize> {
         let var_count = self.arguments.len();
         if register >= var_count {
             Some(register - var_count)
@@ -235,7 +233,7 @@ impl<D: Discretization> Machine<D> {
 
     /// Return the register index corresponding to an instruction index
     #[inline]
-    pub fn instruction_register(&self, index: usize) -> usize {
+    pub(crate) fn instruction_register(&self, index: usize) -> usize {
         self.arguments.len() + index
     }
 
@@ -243,6 +241,73 @@ impl<D: Discretization> Machine<D> {
     #[inline]
     pub fn instruction_count(&self) -> usize {
         self.instructions.len()
+    }
+
+    #[inline]
+    pub fn argument_count(&self) -> usize {
+        self.arguments.len()
+    }
+
+    #[inline]
+    pub fn target_precision(&self) -> u32 {
+        self.disc.target()
+    }
+
+    #[inline]
+    pub fn min_precision(&self) -> u32 {
+        self.min_precision
+    }
+
+    #[inline]
+    pub fn max_precision(&self) -> u32 {
+        self.max_precision
+    }
+
+    #[inline]
+    pub fn argument_precision(&self) -> u32 {
+        self.disc.target().max(self.min_precision)
+    }
+
+    #[inline]
+    pub fn set_max_precision(&mut self, bits: u32) {
+        self.max_precision = bits;
+    }
+
+    #[inline]
+    pub fn iterations(&self) -> usize {
+        self.iteration
+    }
+
+    #[inline]
+    pub fn bumps(&self) -> usize {
+        self.bumps
+    }
+
+    #[inline]
+    pub fn set_profiling_enabled(&mut self, enabled: bool) {
+        self.profiling_enabled = enabled;
+    }
+
+    #[inline]
+    pub fn profiling_enabled(&self) -> bool {
+        self.profiling_enabled
+    }
+
+    #[inline]
+    pub fn execution_records(&self) -> &[Execution] {
+        self.profiler.records()
+    }
+
+    #[inline]
+    pub fn clear_executions(&mut self) {
+        self.profiler.reset();
+    }
+
+    pub fn instruction_names(&self) -> Vec<&'static str> {
+        self.instructions
+            .iter()
+            .map(|instr| instr.data.name_static())
+            .collect()
     }
 
     /// Reconfigure the machine to use the baseline strategy
@@ -264,8 +329,8 @@ impl<D: Discretization> Machine<D> {
 
     /// Return a snapshot of recorded executions and reset the internal buffer pointer.
     pub fn take_executions(&mut self) -> Vec<Execution> {
-        let slice = self.profiler.records().to_vec();
-        self.profiler.reset();
+        let slice = self.execution_records().to_vec();
+        self.clear_executions();
         slice
     }
 }
@@ -273,7 +338,7 @@ impl<D: Discretization> Machine<D> {
 impl PathOutcome {
     /// Create an execute outcome with the given convergence status
     #[inline]
-    pub fn execute(converged: bool) -> PathOutcome {
+    pub(crate) fn execute(converged: bool) -> PathOutcome {
         PathOutcome {
             hint: Hint::Execute,
             converged,
@@ -282,7 +347,7 @@ impl PathOutcome {
 
     /// Create an alias outcome for the provided input position
     #[inline]
-    pub fn alias(idx: u8) -> PathOutcome {
+    pub(crate) fn alias(idx: u8) -> PathOutcome {
         PathOutcome {
             hint: Hint::Alias(idx),
             converged: true,
@@ -291,7 +356,7 @@ impl PathOutcome {
 
     /// Create a known boolean outcome pinned to the provided value
     #[inline]
-    pub fn known_bool(value: bool) -> PathOutcome {
+    pub(crate) fn known_bool(value: bool) -> PathOutcome {
         PathOutcome {
             hint: Hint::KnownBool(value),
             converged: true,
@@ -300,7 +365,10 @@ impl PathOutcome {
 }
 
 /// Lower optimized expressions into instructions with common subexpression elimination
-pub fn lower(exprs: Vec<Expr>, vars: &[String]) -> (IndexMap<InstructionData, usize>, Vec<usize>) {
+pub(crate) fn lower(
+    exprs: Vec<Expr>,
+    vars: &[String],
+) -> (IndexMap<InstructionData, usize>, Vec<usize>) {
     let mut current_reg = vars.len();
     let mut nodes: IndexMap<InstructionData, usize> = IndexMap::new();
     let var_lookup: HashMap<&str, usize> = vars

@@ -4,8 +4,7 @@ use crate::expr::RivalExprArena;
 use crate::hints::RivalHints;
 use crate::profile::{ProfileCache, RivalExecution, RivalProfileSummary};
 use gmp_mpfr_sys::mpfr::{self, mpfr_t};
-use rival::eval::machine::{Hint, Machine, MachineBuilder};
-use rival::{Discretization, ErrorFlags, Ival, RivalError as CoreError};
+use rival::{ErrorFlags, Hint, Ival, Machine, MachineBuilder, RivalError as CoreError};
 use rug::Float;
 use std::ffi::CStr;
 use std::os::raw::c_char;
@@ -75,19 +74,19 @@ unsafe fn marshal_point_args(
     for (i, &ptr) in arg_ptrs.iter().enumerate() {
         let ival = &mut buf[i];
         let src_prec = unsafe { mpfr::get_prec(ptr) };
-        ival.lo.as_float_mut().set_prec(src_prec as u32);
-        ival.hi.as_float_mut().set_prec(src_prec as u32);
+        ival.lo_mut().set_prec(src_prec as u32);
+        ival.hi_mut().set_prec(src_prec as u32);
         unsafe {
-            mpfr::set(ival.lo.as_float_mut().as_raw_mut(), ptr, mpfr::rnd_t::RNDN);
-            mpfr::set(ival.hi.as_float_mut().as_raw_mut(), ptr, mpfr::rnd_t::RNDN);
+            mpfr::set(ival.lo_mut().as_raw_mut(), ptr, mpfr::rnd_t::RNDN);
+            mpfr::set(ival.hi_mut().as_raw_mut(), ptr, mpfr::rnd_t::RNDN);
         }
-        ival.lo.immovable = true;
-        ival.hi.immovable = true;
-        ival.err = if ival.lo.as_float().is_finite() {
+        ival.set_immovable(true, true);
+        let err = if ival.lo().is_finite() {
             ErrorFlags::none()
         } else {
             ErrorFlags::error()
         };
+        ival.set_error_flags(err);
     }
 
     Ok(())
@@ -116,35 +115,27 @@ unsafe fn marshal_rect_args(
         let prec = lo_prec.max(hi_prec);
 
         let ival = &mut buf[i];
-        ival.lo.as_float_mut().set_prec(prec);
-        ival.hi.as_float_mut().set_prec(prec);
+        ival.lo_mut().set_prec(prec);
+        ival.hi_mut().set_prec(prec);
 
         unsafe {
-            mpfr::set(
-                ival.lo.as_float_mut().as_raw_mut(),
-                lo_ptr,
-                mpfr::rnd_t::RNDN,
-            );
-            mpfr::set(
-                ival.hi.as_float_mut().as_raw_mut(),
-                hi_ptr,
-                mpfr::rnd_t::RNDN,
-            );
+            mpfr::set(ival.lo_mut().as_raw_mut(), lo_ptr, mpfr::rnd_t::RNDN);
+            mpfr::set(ival.hi_mut().as_raw_mut(), hi_ptr, mpfr::rnd_t::RNDN);
         }
 
-        let fixed = { ival.lo.as_float() == ival.hi.as_float() };
+        let fixed = { ival.lo() == ival.hi() };
         let err = {
-            let lo = ival.lo.as_float();
-            let hi = ival.hi.as_float();
+            let lo = ival.lo();
+            let hi = ival.hi();
             lo.is_nan() || hi.is_nan() || (fixed && lo.is_infinite())
         };
-        ival.lo.immovable = fixed;
-        ival.hi.immovable = fixed;
-        ival.err = if err {
+        ival.set_immovable(fixed, fixed);
+        let flags = if err {
             ErrorFlags::error()
         } else {
             ErrorFlags::none()
         };
+        ival.set_error_flags(flags);
     }
 
     Ok(())
@@ -166,7 +157,7 @@ unsafe fn write_outputs(
         }
     }
     for (i, val) in outputs.iter().enumerate() {
-        unsafe { mpfr::set(out_ptrs[i], val.lo.as_float().as_raw(), mpfr::rnd_t::RNDN) };
+        unsafe { mpfr::set(out_ptrs[i], val.lo().as_raw(), mpfr::rnd_t::RNDN) };
     }
     Ok(())
 }
@@ -187,7 +178,7 @@ unsafe fn apply_inner(
         return RivalError::InvalidInput;
     }
 
-    if !hints.is_null() && unsafe { (*hints).hints.len() } != wrapper.machine.instructions.len() {
+    if !hints.is_null() && unsafe { (*hints).hints.len() } != wrapper.machine.instruction_count() {
         return RivalError::InvalidInput;
     }
 
@@ -197,7 +188,7 @@ unsafe fn apply_inner(
         }
     }
 
-    wrapper.machine.max_precision = max_precision;
+    wrapper.machine.set_max_precision(max_precision);
     let hints_opt = unsafe { extract_hints(hints) };
 
     let result = match max_iterations {
@@ -227,7 +218,7 @@ unsafe fn analyze_inner(
         return invalid_analyze_result();
     }
 
-    if !hints.is_null() && unsafe { (*hints).hints.len() } != wrapper.machine.instructions.len() {
+    if !hints.is_null() && unsafe { (*hints).hints.len() } != wrapper.machine.instruction_count() {
         return invalid_analyze_result();
     }
 
@@ -249,8 +240,8 @@ unsafe fn analyze_inner(
 
     RivalAnalyzeResult {
         error: RivalError::Ok,
-        is_error: !status.lo.as_float().is_zero(),
-        maybe_error: !status.hi.as_float().is_zero(),
+        is_error: !status.lo().is_zero(),
+        maybe_error: !status.hi().is_zero(),
         converged,
         hints: Box::into_raw(Box::new(RivalHints { hints: next_hints })),
     }
@@ -321,7 +312,7 @@ pub unsafe extern "C" fn rival_machine_new(
             .profile_capacity(profile_capacity)
             .build(exprs_vec, vars_vec);
 
-        let arg_prec = machine.disc.target().max(machine.min_precision);
+        let arg_prec = machine.argument_precision();
         let arg_buf: Vec<Ival> = (0..n_vars).map(|_| Ival::zero(arg_prec)).collect();
         let rect_buf: Vec<Ival> = (0..n_vars)
             .map(|_| Ival::from_lo_hi(Float::with_val(arg_prec, 0), Float::with_val(arg_prec, 0)))
@@ -467,7 +458,7 @@ pub unsafe extern "C" fn rival_profiler_count(machine: *const RivalMachine) -> u
     if machine.is_null() {
         0
     } else {
-        unsafe { (*machine).machine.profiler.records().len() }
+        unsafe { (*machine).machine.execution_records().len() }
     }
 }
 
@@ -480,7 +471,7 @@ pub unsafe extern "C" fn rival_profiler_get(
     if machine.is_null() || out.is_null() {
         return false;
     }
-    let records = unsafe { (*machine).machine.profiler.records() };
+    let records = unsafe { (*machine).machine.execution_records() };
     if idx >= records.len() {
         return false;
     }
@@ -499,7 +490,7 @@ pub unsafe extern "C" fn rival_profiler_get(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rival_profiler_reset(machine: *mut RivalMachine) {
     if !machine.is_null() {
-        unsafe { (*machine).machine.profiler.reset() };
+        unsafe { (*machine).machine.clear_executions() };
     }
 }
 
@@ -518,9 +509,9 @@ pub unsafe extern "C" fn rival_profiler_aggregate(
     }
 
     let wrapper = unsafe { &mut *machine };
-    let bumps = wrapper.machine.bumps;
-    let iterations = wrapper.machine.iteration;
-    let records = wrapper.machine.profiler.records();
+    let bumps = wrapper.machine.bumps();
+    let iterations = wrapper.machine.iterations();
+    let records = wrapper.machine.execution_records();
 
     if records.is_empty() {
         wrapper.profile_cache.summary_from_cache()
@@ -529,7 +520,7 @@ pub unsafe extern "C" fn rival_profiler_aggregate(
             wrapper
                 .profile_cache
                 .aggregate_from(records.iter(), bucket_size, bumps, iterations);
-        wrapper.machine.profiler.reset();
+        wrapper.machine.clear_executions();
         summary
     }
 }
@@ -547,11 +538,11 @@ pub unsafe extern "C" fn rival_profiler_executions(
     }
 
     let wrapper = unsafe { &mut *machine };
-    let records = wrapper.machine.profiler.records();
+    let records = wrapper.machine.execution_records();
 
     if !records.is_empty() {
         wrapper.profile_cache.cache_executions(records.iter());
-        wrapper.machine.profiler.reset();
+        wrapper.machine.clear_executions();
     } else {
         wrapper.profile_cache.executions.clear();
     }
@@ -579,12 +570,7 @@ pub unsafe extern "C" fn rival_instruction_names(
     let wrapper = unsafe { &mut *machine };
 
     if wrapper.instruction_names_cache.is_empty() {
-        let names: Vec<&str> = wrapper
-            .machine
-            .instructions
-            .iter()
-            .map(|instr| instr.data.name_static())
-            .collect();
+        let names: Vec<&str> = wrapper.machine.instruction_names();
         wrapper.instruction_names_cache = names.join("\0").into_bytes();
     }
 
@@ -597,7 +583,7 @@ pub unsafe extern "C" fn rival_machine_iterations(machine: *const RivalMachine) 
     if machine.is_null() {
         0
     } else {
-        unsafe { (*machine).machine.iteration as u32 }
+        unsafe { (*machine).machine.iterations() as u32 }
     }
 }
 
@@ -606,7 +592,7 @@ pub unsafe extern "C" fn rival_machine_bumps(machine: *const RivalMachine) -> u3
     if machine.is_null() {
         0
     } else {
-        unsafe { (*machine).machine.bumps as u32 }
+        unsafe { (*machine).machine.bumps() as u32 }
     }
 }
 
@@ -617,7 +603,9 @@ pub unsafe extern "C" fn rival_machine_set_profiling(
 ) {
     if !machine.is_null() {
         let wrapper = unsafe { &mut *machine };
-        wrapper.machine.profiling_enabled = mode == RivalProfilingMode::On;
+        wrapper
+            .machine
+            .set_profiling_enabled(mode == RivalProfilingMode::On);
     }
 }
 
@@ -629,7 +617,7 @@ pub unsafe extern "C" fn rival_machine_get_profiling(
         RivalProfilingMode::Off
     } else {
         let wrapper = unsafe { &*machine };
-        if wrapper.machine.profiling_enabled {
+        if wrapper.machine.profiling_enabled() {
             RivalProfilingMode::On
         } else {
             RivalProfilingMode::Off

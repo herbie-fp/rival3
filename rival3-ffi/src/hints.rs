@@ -1,4 +1,4 @@
-use rival::eval::machine::Hint;
+use rival::Hint;
 
 pub struct RivalHints {
     pub(crate) hints: Vec<Hint>,

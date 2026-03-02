@@ -30,7 +30,7 @@ impl Ival {
         self.err = a.err;
     }
 
-    pub fn overflows_loose_at(&mut self, a: &Ival, lo: Float, hi: Float) {
+    pub(crate) fn overflows_loose_at(&mut self, a: &Ival, lo: Float, hi: Float) {
         let x_lo = a.lo.as_float();
         let x_hi = a.hi.as_float();
 
@@ -43,7 +43,7 @@ impl Ival {
         self.comonotonic_assign(&mpfr_neg, a);
     }
 
-    pub fn exact_neg_assign(&mut self, a: &Ival) {
+    pub(crate) fn exact_neg_assign(&mut self, a: &Ival) {
         let prec = a.max_prec();
         self.set_prec(prec);
         self.neg_assign(a);
@@ -81,13 +81,13 @@ impl Ival {
         }
     }
 
-    pub fn exact_fabs_assign(&mut self, a: &Ival) {
+    pub(crate) fn exact_fabs_assign(&mut self, a: &Ival) {
         let prec = a.max_prec();
         self.set_prec(prec);
         self.fabs_assign(a);
     }
 
-    pub fn pre_fabs_assign(&mut self, x: &Ival) {
+    pub(crate) fn pre_fabs_assign(&mut self, x: &Ival) {
         match classify(x, false) {
             IvalClass::Pos => {
                 self.assign_from(x);
@@ -452,7 +452,7 @@ impl Ival {
 }
 
 #[must_use]
-pub fn endpoint_unary(
+pub(crate) fn endpoint_unary(
     f: impl FnOnce(&Float, &mut Float, Round) -> bool,
     ep: &Endpoint,
     out: &mut Float,
@@ -464,7 +464,7 @@ pub fn endpoint_unary(
 }
 
 #[must_use]
-pub fn endpoint_binary(
+pub(crate) fn endpoint_binary(
     f: impl FnOnce(&Float, &Float, &mut Float, Round) -> bool,
     ep1: &Endpoint,
     ep2: &Endpoint,
@@ -477,18 +477,4 @@ pub fn endpoint_binary(
     (ep1.immovable && v1.is_infinite())
         || (ep2.immovable && v2.is_infinite())
         || (ep1.immovable && ep2.immovable && exact)
-}
-
-#[must_use]
-pub fn endpoint_minmax(
-    f: impl FnOnce(&Float, &Float, &mut Float, Round) -> bool,
-    ep1: &Endpoint,
-    ep2: &Endpoint,
-    out: &mut Float,
-    rnd: Round,
-) -> bool {
-    let v1 = ep1.as_float();
-    let v2 = ep2.as_float();
-    f(v1, v2, out, rnd);
-    (out == v1 && ep1.immovable) || (out == v2 && ep2.immovable)
 }

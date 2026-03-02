@@ -1,6 +1,6 @@
 //! Operation registry generating evaluation and optimization helpers
 //! Defines interval operators along with dispatch, bounds, and path reduction hooks
-use crate::def_ops;
+use crate::eval::macros::def_ops;
 use crate::eval::adjust::path_reduction;
 use crate::eval::tricks::{AmplBounds, TrickContext, crosses_zero, get_slack};
 use crate::interval::Ival;

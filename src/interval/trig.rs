@@ -281,7 +281,7 @@ impl Ival {
         }
     }
 
-    pub fn cosu_assign(&mut self, x: &Ival, n: u64) {
+    pub(crate) fn cosu_assign(&mut self, x: &Ival, n: u64) {
         self.err = x.err;
         let (xlo, xhi) = (x.lo.as_float(), x.hi.as_float());
         let period_qtr = period_quarter_bitlen(n, 4);
@@ -332,7 +332,7 @@ impl Ival {
         }
     }
 
-    pub fn sinu_assign(&mut self, x: &Ival, n: u64) {
+    pub(crate) fn sinu_assign(&mut self, x: &Ival, n: u64) {
         self.err = x.err;
         let (xlo, xhi) = (x.lo.as_float(), x.hi.as_float());
         let period_qtr = period_quarter_bitlen(n, 4);
@@ -376,7 +376,7 @@ impl Ival {
         }
     }
 
-    pub fn tanu_assign(&mut self, x: &Ival, n: u64) {
+    pub(crate) fn tanu_assign(&mut self, x: &Ival, n: u64) {
         let (xlo, xhi) = (x.lo.as_float(), x.hi.as_float());
         let period_qtr = period_quarter_bitlen(n, 8);
         let immovable = x.lo.immovable && x.hi.immovable;

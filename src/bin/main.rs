@@ -1,11 +1,5 @@
 use ascii_table::{Align, AsciiTable};
-use rival::eval::{
-    ast::Expr,
-    machine::{Discretization, MachineBuilder},
-    profile::Execution,
-    run::RivalError,
-};
-use rival::interval::Ival;
+use rival::{Discretization, Execution, Expr, Ival, MachineBuilder, RivalError};
 use rug::{Assign, Float, Rational};
 use std::env;
 use std::fmt::Display;
@@ -393,19 +387,19 @@ fn main() {
         .max_precision(10000)
         .build(vec![expr], vars);
 
-    let arg_prec = machine.disc.target().max(machine.min_precision);
+    let arg_prec = machine.argument_precision();
     let arg_ivals: Vec<Ival> = values
         .iter()
         .map(|s| {
             let mut ival = Ival::zero(arg_prec);
             if let Ok(rat) = s.parse::<Rational>() {
                 let f = Float::with_val(arg_prec, &rat);
-                ival.lo.as_float_mut().assign(&f);
-                ival.hi.as_float_mut().assign(&f);
+                ival.lo_mut().assign(&f);
+                ival.hi_mut().assign(&f);
             } else if let Ok(f) = Float::parse(s) {
                 let f = Float::with_val(arg_prec, f);
-                ival.lo.as_float_mut().assign(&f);
-                ival.hi.as_float_mut().assign(&f);
+                ival.lo_mut().assign(&f);
+                ival.hi_mut().assign(&f);
             } else if let Ok(v) = s.parse::<f64>() {
                 ival.f64_assign(v);
             } else {
@@ -422,7 +416,7 @@ fn main() {
     let result = machine.apply(&arg_ivals, None, 10);
     let total_time = start.elapsed().as_secs_f64() * 1000.0;
 
-    let execs: Vec<Execution> = machine.profiler.records().to_vec();
+    let execs: Vec<Execution> = machine.execution_records().to_vec();
     let num_iterations = execs.iter().map(|e| e.iteration).max().unwrap_or(0) + 1;
     let num_instructions = machine.instruction_count();
 
@@ -436,8 +430,8 @@ fn main() {
         Ok(outputs) => {
             print!("\nFinal value:");
             for output in outputs {
-                let lo = output.lo.as_float();
-                let hi = output.hi.as_float();
+                let lo = output.lo();
+                let hi = output.hi();
                 if lo == hi {
                     print!(" {}", lo.to_f64());
                 } else {

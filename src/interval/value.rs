@@ -8,40 +8,40 @@ use crate::mpfr::zero;
 use rug::ops::NegAssign;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Endpoint {
-    pub val: OrdFloat,
-    pub immovable: bool,
+pub(crate) struct Endpoint {
+    pub(crate) val: OrdFloat,
+    pub(crate) immovable: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Ival {
-    pub lo: Endpoint,
-    pub hi: Endpoint,
-    pub err: ErrorFlags,
+    pub(crate) lo: Endpoint,
+    pub(crate) hi: Endpoint,
+    pub(crate) err: ErrorFlags,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ErrorFlags {
-    pub partial: bool,
-    pub total: bool,
+    pub(crate) partial: bool,
+    pub(crate) total: bool,
 }
 
 impl Endpoint {
-    pub fn new(val: OrdFloat, immovable: bool) -> Self {
+    pub(crate) fn new(val: OrdFloat, immovable: bool) -> Self {
         Endpoint { val, immovable }
     }
 
     #[inline]
-    pub fn as_float(&self) -> &Float {
+    pub(crate) fn as_float(&self) -> &Float {
         self.val.as_float()
     }
 
     #[inline]
-    pub fn as_float_mut(&mut self) -> &mut Float {
+    pub(crate) fn as_float_mut(&mut self) -> &mut Float {
         self.val.as_float_mut()
     }
 
-    pub fn endpoint_min2_assign(&mut self, b: Endpoint) {
+    pub(crate) fn endpoint_min2_assign(&mut self, b: Endpoint) {
         use std::cmp::Ordering;
         match self.val.cmp(&b.val) {
             Ordering::Less => (),
@@ -50,7 +50,7 @@ impl Endpoint {
         }
     }
 
-    pub fn endpoint_max2_assign(&mut self, b: Endpoint) {
+    pub(crate) fn endpoint_max2_assign(&mut self, b: Endpoint) {
         use std::cmp::Ordering;
         match self.val.cmp(&b.val) {
             Ordering::Greater => (),
@@ -61,9 +61,55 @@ impl Endpoint {
 }
 
 impl Ival {
-    pub fn new(lo: Endpoint, hi: Endpoint, err: ErrorFlags) -> Self {
+    pub(crate) fn new(lo: Endpoint, hi: Endpoint, err: ErrorFlags) -> Self {
         assert!(lo.as_float().prec() == hi.as_float().prec());
         Ival { lo, hi, err }
+    }
+
+    #[inline]
+    pub fn lo(&self) -> &Float {
+        self.lo.as_float()
+    }
+
+    #[inline]
+    pub fn hi(&self) -> &Float {
+        self.hi.as_float()
+    }
+
+    #[inline]
+    pub fn lo_mut(&mut self) -> &mut Float {
+        self.lo.as_float_mut()
+    }
+
+    #[inline]
+    pub fn hi_mut(&mut self) -> &mut Float {
+        self.hi.as_float_mut()
+    }
+
+    #[inline]
+    pub fn lo_immovable(&self) -> bool {
+        self.lo.immovable
+    }
+
+    #[inline]
+    pub fn hi_immovable(&self) -> bool {
+        self.hi.immovable
+    }
+
+    #[inline]
+    pub fn set_immovable(&mut self, lo: bool, hi: bool) {
+        self.lo.immovable = lo;
+        self.hi.immovable = hi;
+    }
+
+    #[inline]
+    pub fn error_flags(&self) -> ErrorFlags {
+        self.err
+    }
+
+    #[inline]
+    pub fn set_error_flags(&mut self, err: ErrorFlags) {
+        self.err = err;
     }
 
     #[inline]
@@ -77,13 +123,13 @@ impl Ival {
         self.hi.as_float_mut().set_prec(prec);
     }
 
-    pub fn max_prec(&self) -> u32 {
+    pub(crate) fn max_prec(&self) -> u32 {
         // Assumed that the lo and high precisions are always the same
         // This is ony enforced in Ival::new however
         self.lo.as_float().prec()
     }
 
-    pub fn neg_inplace(&mut self) {
+    pub(crate) fn neg_inplace(&mut self) {
         self.lo.as_float_mut().neg_assign();
         self.hi.as_float_mut().neg_assign();
         std::mem::swap(&mut self.lo, &mut self.hi);
@@ -135,7 +181,7 @@ impl Ival {
         )
     }
 
-    pub fn assign_from(&mut self, src: &Ival) {
+    pub(crate) fn assign_from(&mut self, src: &Ival) {
         // Ensure precision
         let src_prec = src.prec();
         self.lo.as_float_mut().set_prec(src_prec);
@@ -169,7 +215,7 @@ impl Ival {
 
     /// Return Some(false) if interval is exactly [0,0], Some(true) if [1,1], else None.
     /// Returns None whenever there are error flags present.
-    pub fn known_bool(&self) -> Option<bool> {
+    pub(crate) fn known_bool(&self) -> Option<bool> {
         if self.err.partial || self.err.total {
             return None;
         }
@@ -185,7 +231,7 @@ impl Ival {
     }
 
     // The following helpers mirror previous clamp logic
-    pub fn clamp(&mut self, lo: Float, hi: Float) {
+    pub(crate) fn clamp(&mut self, lo: Float, hi: Float) {
         let x_lo = self.lo.as_float();
         let x_hi = self.hi.as_float();
 
@@ -208,7 +254,7 @@ impl Ival {
         }
     }
 
-    pub fn clamp_strict(&mut self, lo: Float, hi: Float) {
+    pub(crate) fn clamp_strict(&mut self, lo: Float, hi: Float) {
         let x_lo = self.lo.as_float();
         let x_hi = self.hi.as_float();
 
@@ -254,23 +300,33 @@ impl ErrorFlags {
         ErrorFlags::new(true, true)
     }
 
-    pub fn union(&self, other: &ErrorFlags) -> ErrorFlags {
+    #[inline]
+    pub fn partial(&self) -> bool {
+        self.partial
+    }
+
+    #[inline]
+    pub fn total(&self) -> bool {
+        self.total
+    }
+
+    pub(crate) fn union(&self, other: &ErrorFlags) -> ErrorFlags {
         ErrorFlags::new(self.partial || other.partial, self.total || other.total)
     }
 
-    pub fn union_disjoint(&self, other: &ErrorFlags) -> ErrorFlags {
+    pub(crate) fn union_disjoint(&self, other: &ErrorFlags) -> ErrorFlags {
         ErrorFlags::new(self.partial || other.partial, self.total && other.total)
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum IvalClass {
+pub(crate) enum IvalClass {
     Pos = 1,
     Neg = -1,
     Mix = 0,
 }
 
-pub fn classify(ival: &Ival, strict: bool) -> IvalClass {
+pub(crate) fn classify(ival: &Ival, strict: bool) -> IvalClass {
     let lo = ival.lo.as_float();
     let hi = ival.hi.as_float();
     if strict {
