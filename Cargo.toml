@@ -2,6 +2,11 @@
 name = "rival"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
+license-file = "LICENSE"
+description = "Real Computation via Interval Arithmetic"
+repository = "https://github.com/herbie-fp/rival3"
+readme = "README.md"
 
 [lib]
 name = "rival"
