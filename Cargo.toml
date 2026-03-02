@@ -8,6 +8,8 @@ description = "Real Computation via Interval Arithmetic"
 repository = "https://github.com/herbie-fp/rival3"
 readme = "README.md"
 
+exclude = ["infra/*", "rival3-racket/*"]
+
 [lib]
 name = "rival"
 path = "src/lib.rs"
