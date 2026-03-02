@@ -1,6 +1,8 @@
 //! Wrappers around MPFR functions using the `rug` and `gmp_mpfr_sys` crates.
 //! Uses unsafe functions for ease of implementation, and in cases such as
 //! `exp_overflow_threshold`, for efficiency
+use std::os::raw::c_ulong;
+
 use gmp_mpfr_sys::mpfr;
 use rug::Float;
 use rug::float::Round;
@@ -97,15 +99,15 @@ mpfr_binary_op!(mpfr_fmod, mpfr::fmod);
 mpfr_binary_op!(mpfr_remainder, mpfr::remainder);
 
 pub fn mpfr_cosu(x: &Float, n: u64, out: &mut Float, rnd: Round) -> bool {
-    unsafe { mpfr::cosu(out.as_raw_mut(), x.as_raw(), n, to_mpfr_round(rnd)) == 0 }
+    unsafe { mpfr::cosu(out.as_raw_mut(), x.as_raw(), n as c_ulong, to_mpfr_round(rnd)) == 0 }
 }
 
 pub fn mpfr_sinu(x: &Float, n: u64, out: &mut Float, rnd: Round) -> bool {
-    unsafe { mpfr::sinu(out.as_raw_mut(), x.as_raw(), n, to_mpfr_round(rnd)) == 0 }
+    unsafe { mpfr::sinu(out.as_raw_mut(), x.as_raw(), n as c_ulong, to_mpfr_round(rnd)) == 0 }
 }
 
 pub fn mpfr_tanu(x: &Float, n: u64, out: &mut Float, rnd: Round) -> bool {
-    unsafe { mpfr::tanu(out.as_raw_mut(), x.as_raw(), n, to_mpfr_round(rnd)) == 0 }
+    unsafe { mpfr::tanu(out.as_raw_mut(), x.as_raw(), n as c_ulong, to_mpfr_round(rnd)) == 0 }
 }
 
 pub fn mpfr_pi(out: &mut Float, rnd: Round) -> bool {
