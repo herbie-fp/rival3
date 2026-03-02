@@ -3,6 +3,7 @@ use rug::Assign;
 use std::cmp::Ordering;
 
 impl Ival {
+    /// Compute the interval logical NOT of `input`.
     pub fn not_assign(&mut self, input: &Ival) {
         set_bool_result(
             self,
@@ -12,6 +13,7 @@ impl Ival {
         self.err = input.err;
     }
 
+    /// Compute the interval logical AND of `lhs` and `rhs`.
     pub fn and_assign(&mut self, lhs: &Ival, rhs: &Ival) {
         set_bool_result(
             self,
@@ -27,6 +29,7 @@ impl Ival {
         self.err = lhs.err.union(&rhs.err);
     }
 
+    /// Compute the interval logical OR of `lhs` and `rhs`.
     pub fn or_assign(&mut self, lhs: &Ival, rhs: &Ival) {
         set_bool_result(
             self,
@@ -42,6 +45,7 @@ impl Ival {
         self.err = lhs.err.union(&rhs.err);
     }
 
+    /// Compute the interval equality comparison `lhs == rhs`.
     pub fn eq_assign(&mut self, lhs: &Ival, rhs: &Ival) {
         let (can_lt, must_lt, can_gt, must_gt) = cmp_flags(lhs, rhs);
         set_bool_result(
@@ -58,6 +62,7 @@ impl Ival {
         self.err = lhs.err.union(&rhs.err);
     }
 
+    /// Compute the interval inequality comparison `lhs != rhs`.
     pub fn ne_assign(&mut self, lhs: &Ival, rhs: &Ival) {
         let (can_lt, must_lt, can_gt, must_gt) = cmp_flags(lhs, rhs);
         set_bool_result(
@@ -74,12 +79,14 @@ impl Ival {
         self.err = lhs.err.union(&rhs.err);
     }
 
+    /// Compute the interval less-than comparison `lhs < rhs`.
     pub fn lt_assign(&mut self, lhs: &Ival, rhs: &Ival) {
         let (can_lt, must_lt, _, _) = cmp_flags(lhs, rhs);
         set_bool_result(self, must_lt, can_lt);
         self.err = lhs.err.union(&rhs.err);
     }
 
+    /// Compute the interval less-than-or-equal comparison `lhs <= rhs`.
     pub fn le_assign(&mut self, lhs: &Ival, rhs: &Ival) {
         let (_, _, can_gt, must_gt) = cmp_flags(lhs, rhs);
         set_bool_result(
@@ -90,12 +97,14 @@ impl Ival {
         self.err = lhs.err.union(&rhs.err);
     }
 
+    /// Compute the interval greater-than comparison `lhs > rhs`.
     pub fn gt_assign(&mut self, lhs: &Ival, rhs: &Ival) {
         let (_, _, can_gt, must_gt) = cmp_flags(lhs, rhs);
         set_bool_result(self, must_gt, can_gt);
         self.err = lhs.err.union(&rhs.err);
     }
 
+    /// Compute the interval greater-than-or-equal comparison `lhs >= rhs`.
     pub fn ge_assign(&mut self, lhs: &Ival, rhs: &Ival) {
         let (can_lt, must_lt, _, _) = cmp_flags(lhs, rhs);
         set_bool_result(
@@ -106,6 +115,18 @@ impl Ival {
         self.err = lhs.err.union(&rhs.err);
     }
 
+    /// Compute an interval conditional: if `cond` then `when_true` else `when_false`.
+    ///
+    /// Here, `cond` must be a boolean interval, while `when_true` and
+    /// `when_false` should be intervals of the same type, either both
+    /// real or both boolean. If `cond` is uncertain, the union of
+    /// `when_true` and `when_false` is returned.
+    ///
+    /// Note that typically, uses of `if_assign` are incomplete because
+    /// they are not flow-sensitive. For example, `if (x < 0) then (-x)
+    /// else x` is always non-negative, but both branches evaluate to
+    /// the same interval because the condition does not refine the value
+    /// of `x` in either branch.
     pub fn if_assign(&mut self, cond: &Ival, when_true: &Ival, when_false: &Ival) {
         let cond_lo_true = endpoint_truth(&cond.lo);
         let cond_hi_true = endpoint_truth(&cond.hi);
@@ -130,6 +151,11 @@ impl Ival {
         }
     }
 
+    /// Returns a boolean interval indicating whether any inputs
+    /// were discarded when computing `input`.
+    ///
+    /// These flags are "sticky": further computations on `input`
+    /// will maintain the already-set error flags.
     pub fn error_assign(&mut self, input: &Ival) {
         set_bool_result(
             self,
@@ -139,6 +165,9 @@ impl Ival {
         self.err = ErrorFlags::none();
     }
 
+    /// Returns an illegal interval if `cond` is false, a legal interval
+    /// if `cond` is true, and a partially-legal one if `cond`'s truth
+    /// value is unknown. The value of the output interval is always true.
     pub fn assert_assign(&mut self, cond: &Ival) {
         set_bool_result(self, BoolFlag::always_true(), BoolFlag::always_true());
         self.err = ErrorFlags::new(
@@ -191,7 +220,7 @@ fn assign_union(out: &mut Ival, a: &Ival, b: &Ival) {
         return;
     }
 
-    // Helper to assign endpoint based on comparison
+    // Helper to assign endpoint based on comparison.
     let assign_endpoint =
         |out_ep: &mut Endpoint, a_ep: &Endpoint, b_ep: &Endpoint, prefer_smaller: bool| match a_ep
             .val

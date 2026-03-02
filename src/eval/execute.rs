@@ -10,14 +10,14 @@ use rug::ops::AssignRound;
 pub fn evaluate_instruction(instruction: &Instruction, registers: &mut [Ival], precision: u32) {
     let out = instruction.out;
 
-    // Split registers so we can mutate out_reg while reading inputs
+    // Split registers so we can mutate out_reg while reading inputs.
     let (before, rest) = registers.split_at_mut(out);
     let (out_reg, after) = rest.split_first_mut().expect("Invalid register index");
     // Set the register's working precision before evaluating the instruction because all
-    // registers are by default allocated to max precision
+    // registers are by default allocated to max precision.
     out_reg.set_prec(precision);
 
-    // Helper to access any register despite the split
+    // Helper to access any register despite the split.
     let get_reg = |idx: usize| -> &Ival {
         if idx < out {
             &before[idx]

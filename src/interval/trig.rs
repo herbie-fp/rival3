@@ -149,6 +149,7 @@ where
 }
 
 impl Ival {
+    /// Compute the interval cosine of `x`.
     pub fn cos_assign(&mut self, x: &Ival) {
         self.err = x.err;
         let (xlo, xhi) = (x.lo.as_float(), x.hi.as_float());
@@ -201,6 +202,7 @@ impl Ival {
         }
     }
 
+    /// Compute the interval sine of `x`.
     pub fn sin_assign(&mut self, x: &Ival) {
         self.err = x.err;
         let (xlo, xhi) = (x.lo.as_float(), x.hi.as_float());
@@ -245,6 +247,7 @@ impl Ival {
         }
     }
 
+    /// Compute the interval tangent of `x`.
     pub fn tan_assign(&mut self, x: &Ival) {
         let (xlo, xhi) = (x.lo.as_float(), x.hi.as_float());
         let immovable = x.lo.immovable && x.hi.immovable;

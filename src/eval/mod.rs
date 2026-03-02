@@ -1,4 +1,4 @@
-//! Interval expression evaluation pipeline
+//! Interval expression evaluation pipeline.
 
 pub(crate) mod machine;
 pub(crate) mod profile;

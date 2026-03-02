@@ -119,7 +119,7 @@ impl RivalExprArena {
             ArenaNode::Literal(f) => Expr::Literal(f.clone()),
             ArenaNode::Rational(r) => Expr::Rational(r.clone()),
             ArenaNode::BigInt(i) => {
-                // Use enough precision to exactly represent the integer
+                // Use enough precision to exactly represent the integer.
                 let bits = i.significant_bits().max(53);
                 Expr::Literal(Float::with_val(bits, i))
             }

@@ -1,6 +1,6 @@
-//! Macro for defining interval operations and generated helpers
-//! Provides enums, dispatch, optimization, and path reduction wiring
-//! TODO: Split up this macro to make it easier to use/extend
+//! Macro for defining interval operations and generated helpers.
+//! Provides enums, dispatch, optimization, and path reduction wiring.
+//! TODO: Split up this macro to make it easier to use/extend.
 macro_rules! def_ops {
     (
         constant {
@@ -51,57 +51,112 @@ macro_rules! def_ops {
             ),* $(,)?
         } $(,)?
     ) => {
-        /// High-level expression AST
+        /// High-level expression AST for real-number computation.
+        ///
+        /// Rival supports a simple language of real-number expressions containing
+        /// variables, rational literals, common mathematical functions, and
+        /// common mathematical constants:
+        ///
+        /// ```text
+        /// Expr = variable
+        ///      | literal
+        ///      | (constant)
+        ///      | (operator Expr ...)
+        ///
+        /// constant = Pi | E
+        ///
+        /// operator = Add | Sub | Mul | Div | Fma | Fabs
+        ///          | Sqrt | Cbrt | Hypot
+        ///          | Exp | Exp2 | Expm1 | Pow
+        ///          | Log | Log2 | Log10 | Log1p | Logb
+        ///          | Sin | Cos | Tan | Asin | Acos | Atan | Atan2
+        ///          | Sinh | Cosh | Tanh | Asinh | Acosh | Atanh
+        ///          | Erf | Erfc | Lgamma | Tgamma
+        ///          | Fmod | Remainder | Rint | Round | Ceil | Floor | Trunc
+        ///          | Fmin | Fmax | Copysign | Fdim
+        ///          | Lt | Le | Gt | Ge | Eq | Ne
+        ///          | If | And | Or | Not
+        ///          | Assert | Error
+        /// ```
+        ///
+        /// Expressions largely follow the semantics of `math.h`, not Racket,
+        /// when it comes to, for example, the order of arguments to `atan2`
+        /// or the naming of the exponential function.
+        ///
+        /// Some inputs are invalid to some operations, such as division by zero,
+        /// square roots of negative numbers, and similar. For `Pow`, Rival
+        /// considers `pow(0, x)` valid for non-negative `x`, and `pow(x, y)`
+        /// invalid for negative `x` and non-integer `y`. In general these
+        /// conventions again follow those in `math.h`. Colloquially we say
+        /// that these expressions "throw" on invalid points, though note
+        /// that internally Rival uses error intervals to soundly track
+        /// whether an input is invalid or not.
+        ///
+        /// Expressions that mix boolean and real-number operations must
+        /// type-check in the expected way, and variables must have consistent
+        /// types. Rival does not perform typechecking; that is a user
+        /// responsibility, and Rival may return undefined results if passed
+        /// ill-typed formulas.
+        ///
+        /// The `Assert` and `Error` variants need additional explanation;
+        /// these control the definition of a "valid" input to an expression.
+        /// The `Assert` function takes in a boolean input and returns a
+        /// boolean output. If the input is false, `Assert` throws. Its
+        /// output is always true. `Error` has the opposite behavior. This
+        /// function never throws, and instead returns true if its argument
+        /// throws and false if it doesn't.
+        /// `Assert` and `Error` can be used to model constructs like
+        /// preconditions, tests, try/catch blocks, and others.
         #[derive(Debug, Clone, PartialEq)]
         pub enum Expr {
-            /// Variable reference
+            /// Variable reference by name.
             Var(String),
-            /// Literal value
+            /// Floating-point literal value.
             Literal(rug::Float),
-            /// Rational value
+            /// Exact rational value.
             Rational(rug::Rational),
 
-            // Constants
+            // Constants.
             $( $const_name, )*
 
-            // Unary operations
+            // Unary operations.
             $( $unary_name(Box<Expr>), )*
 
-            // Unary parameterized operations (take a u64 parameter and an expression)
+            // Unary parameterized operations (take a u64 parameter and an expression).
             $( $unary_param_name(u64, Box<Expr>), )*
 
-            // Binary operations
+            // Binary operations.
             $( $binary_name(Box<Expr>, Box<Expr>), )*
 
-            // Ternary operations
+            // Ternary operations.
             $( $ternary_name(Box<Expr>, Box<Expr>, Box<Expr>), )*
         }
 
-        /// Unary instruction operations
+        /// Unary instruction operations.
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
         pub enum UnaryOp {
             $( $unary_name, )*
         }
 
-        /// Unary parameterized instruction operations
+        /// Unary parameterized instruction operations.
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
         pub enum UnaryParamOp {
             $( $unary_param_name, )*
         }
 
-        /// Binary instruction operations
+        /// Binary instruction operations.
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
         pub enum BinaryOp {
             $( $binary_name, )*
         }
 
-        /// Ternary instruction operations
+        /// Ternary instruction operations.
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
         pub enum TernaryOp {
             $( $ternary_name, )*
         }
 
-        /// Constant operations
+        /// Constant operations.
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
         pub enum ConstantOp {
             $( $const_name, )*
@@ -137,7 +192,7 @@ macro_rules! def_ops {
             }
         }
 
-        /// Compute error amplification bounds for unary operations
+        /// Compute error amplification bounds for unary operations.
         pub fn bounds_for_unary(
             ctx: &TrickContext,
             op: UnaryOp,
@@ -154,7 +209,7 @@ macro_rules! def_ops {
             }
         }
 
-        /// Compute error amplification bounds for binary operations
+        /// Compute error amplification bounds for binary operations.
         pub fn bounds_for_binary(
             ctx: &TrickContext,
             op: BinaryOp,
@@ -172,7 +227,7 @@ macro_rules! def_ops {
             }
         }
 
-        /// Compute error amplification bounds for ternary operations
+        /// Compute error amplification bounds for ternary operations.
         pub fn bounds_for_ternary(
             ctx: &TrickContext,
             op: TernaryOp,
@@ -191,7 +246,7 @@ macro_rules! def_ops {
             }
         }
 
-        /// Compute error amplification bounds for unary parameterized operations
+        /// Compute error amplification bounds for unary parameterized operations.
         pub fn bounds_for_unary_param(
             ctx: &TrickContext,
             op: UnaryParamOp,
@@ -209,7 +264,7 @@ macro_rules! def_ops {
             }
         }
 
-        /// Path reduction for unary operations
+        /// Path reduction for unary operations.
         pub fn path_reduce_unary<D, F>(
             op: UnaryOp,
             machine: &$crate::eval::machine::Machine<D>,
@@ -227,7 +282,7 @@ macro_rules! def_ops {
             }
         }
 
-        /// Path reduction for binary operations
+        /// Path reduction for binary operations.
         pub fn path_reduce_binary<D, F>(
             op: BinaryOp,
             machine: &$crate::eval::machine::Machine<D>,
@@ -245,7 +300,7 @@ macro_rules! def_ops {
             }
         }
 
-        /// Path reduction for ternary operations
+        /// Path reduction for ternary operations.
         pub fn path_reduce_ternary<D, F>(
             op: TernaryOp,
             machine: &$crate::eval::machine::Machine<D>,
@@ -263,7 +318,7 @@ macro_rules! def_ops {
             }
         }
 
-        /// Path reduction for unary parameterized operations
+        /// Path reduction for unary parameterized operations.
         pub fn path_reduce_unary_param<D, F>(
             op: UnaryParamOp,
             machine: &$crate::eval::machine::Machine<D>,
@@ -281,7 +336,7 @@ macro_rules! def_ops {
             }
         }
 
-        /// Optimize unary operation
+        /// Optimize unary operation.
         pub fn optimize_unary(op: UnaryOp, arg: Expr) -> Expr {
             match op {
                 $(
@@ -290,7 +345,7 @@ macro_rules! def_ops {
             }
         }
 
-        /// Optimize binary operation
+        /// Optimize binary operation.
         pub fn optimize_binary(op: BinaryOp, lhs: Expr, rhs: Expr) -> Expr {
             match op {
                 $(
@@ -299,7 +354,7 @@ macro_rules! def_ops {
             }
         }
 
-        /// Optimize ternary operation
+        /// Optimize ternary operation.
         pub fn optimize_ternary(op: TernaryOp, arg1: Expr, arg2: Expr, arg3: Expr) -> Expr {
             match op {
                 $(
@@ -308,7 +363,7 @@ macro_rules! def_ops {
             }
         }
 
-        /// Optimize unary parameterized operation
+        /// Optimize unary parameterized operation.
         pub fn optimize_unary_param(op: UnaryParamOp, param: u64, arg: Expr) -> Expr {
             match op {
                 $(
@@ -317,7 +372,7 @@ macro_rules! def_ops {
             }
         }
 
-        /// Execute unary operation on interval
+        /// Execute unary operation on interval.
         pub fn execute_unary(op: UnaryOp, output: &mut Ival, input: &Ival) {
             match op {
                 $(
@@ -326,7 +381,7 @@ macro_rules! def_ops {
             }
         }
 
-        /// Execute binary operation on interval
+        /// Execute binary operation on interval.
         pub fn execute_binary(op: BinaryOp, output: &mut Ival, lhs: &Ival, rhs: &Ival) {
             match op {
                 $(
@@ -335,7 +390,7 @@ macro_rules! def_ops {
             }
         }
 
-        /// Execute ternary operation on interval
+        /// Execute ternary operation on interval.
         pub fn execute_ternary(op: TernaryOp, output: &mut Ival, arg1: &Ival, arg2: &Ival, arg3: &Ival) {
             match op {
                 $(
@@ -344,7 +399,7 @@ macro_rules! def_ops {
             }
         }
 
-        /// Execute unary parameterized operation on interval
+        /// Execute unary parameterized operation on interval.
         pub fn execute_unary_param(op: UnaryParamOp, param: u64, output: &mut Ival, input: &Ival) {
             match op {
                 $(
@@ -353,7 +408,7 @@ macro_rules! def_ops {
             }
         }
 
-        /// Execute constant operation on interval
+        /// Execute constant operation on interval.
         pub fn execute_constant(op: ConstantOp, output: &mut Ival) {
             match op {
                 $(
@@ -362,14 +417,14 @@ macro_rules! def_ops {
             }
         }
 
-        /// Lower expression to instruction, returns register index
+        /// Lower expression to instruction, returns register index.
         pub fn lower_expr(
             expr: &Expr,
             var_lookup: &std::collections::HashMap<&str, usize>,
             nodes: &mut indexmap::IndexMap<$crate::eval::instructions::InstructionData, usize>,
             current_reg: &mut usize,
         ) -> usize {
-            // Add instruction with common subexpression elimination
+            // Add instruction with common subexpression elimination.
             fn add_instruction(
                 data: $crate::eval::instructions::InstructionData,
                 nodes: &mut indexmap::IndexMap<$crate::eval::instructions::InstructionData, usize>,
@@ -391,7 +446,7 @@ macro_rules! def_ops {
                     current_reg,
                 ),
 
-                // Constants
+                // Constants.
                 $(
                     Expr::$const_name => add_instruction(
                         $crate::eval::instructions::InstructionData::constant(ConstantOp::$const_name),
@@ -400,7 +455,7 @@ macro_rules! def_ops {
                     ),
                 )*
 
-                // Unary operations
+                // Unary operations.
                 $(
                     Expr::$unary_name(arg) => {
                         let arg_reg = lower_expr(arg, var_lookup, nodes, current_reg);
@@ -408,7 +463,7 @@ macro_rules! def_ops {
                     }
                 )*
 
-                // Unary parameterized operations
+                // Unary parameterized operations.
                 $(
                     Expr::$unary_param_name(param, arg) => {
                         let arg_reg = lower_expr(arg, var_lookup, nodes, current_reg);
@@ -416,7 +471,7 @@ macro_rules! def_ops {
                     }
                 )*
 
-                // Binary operations
+                // Binary operations.
                 $(
                     Expr::$binary_name(lhs, rhs) => {
                         let lhs_reg = lower_expr(lhs, var_lookup, nodes, current_reg);
@@ -425,7 +480,7 @@ macro_rules! def_ops {
                     }
                 )*
 
-                // Ternary operations
+                // Ternary operations.
                 $(
                     Expr::$ternary_name(arg1, arg2, arg3) => {
                         let reg1 = lower_expr(arg1, var_lookup, nodes, current_reg);
@@ -437,10 +492,10 @@ macro_rules! def_ops {
             }
         }
 
-        /// Optimize expression for numerical stability
+        /// Optimize expression for numerical stability.
         pub fn optimize_expr(expr: Expr) -> Expr {
             // Optimize each node once (top-down), then recurse into children
-            // without re-optimizing the parent after children change
+            // without re-optimizing the parent after children change.
             // TODO: might not the best, dig deeper
             let optimized = match expr {
                 $(
@@ -459,7 +514,7 @@ macro_rules! def_ops {
                     Expr::$ternary_name(x, y, z) => optimize_ternary(TernaryOp::$ternary_name, *x, *y, *z),
                 )*
 
-                // Leaves
+                // Leaves.
                 leaf @ (Expr::Var(_) | Expr::Literal(_) | Expr::Rational(_) $( | Expr::$const_name )*) => leaf,
             };
 
@@ -485,57 +540,57 @@ macro_rules! def_ops {
         }
     };
 
-    // Helper: Unary optimization - no optimizer specified
+    // Helper: Unary optimization - no optimizer specified.
     (@optimize_unary_impl $op:ident, $arg:expr ; ) => {
         Expr::$op(Box::new($arg))
     };
-    // Helper: Unary optimization - custom optimizer specified
+    // Helper: Unary optimization - custom optimizer specified.
     (@optimize_unary_impl $op:ident, $arg:expr ; $optimizer:expr) => {
         $optimizer($arg)
     };
 
-    // Helper: Binary optimization - no optimizer specified
+    // Helper: Binary optimization - no optimizer specified.
     (@optimize_binary_impl $op:ident, $lhs:expr, $rhs:expr ; ) => {
         Expr::$op(Box::new($lhs), Box::new($rhs))
     };
-    // Helper: Binary optimization - custom optimizer specified
+    // Helper: Binary optimization - custom optimizer specified.
     (@optimize_binary_impl $op:ident, $lhs:expr, $rhs:expr ; $optimizer:expr) => {
         $optimizer($lhs, $rhs)
     };
 
-    // Helper: Ternary optimization - no optimizer specified
+    // Helper: Ternary optimization - no optimizer specified.
     (@optimize_ternary_impl $op:ident, $arg1:expr, $arg2:expr, $arg3:expr ; ) => {
         Expr::$op(Box::new($arg1), Box::new($arg2), Box::new($arg3))
     };
-    // Helper: Ternary optimization - custom optimizer specified
+    // Helper: Ternary optimization - custom optimizer specified.
     (@optimize_ternary_impl $op:ident, $arg1:expr, $arg2:expr, $arg3:expr ; $optimizer:expr) => {
         $optimizer($arg1, $arg2, $arg3)
     };
 
-    // Helper: Unary param optimization - no optimizer specified
+    // Helper: Unary param optimization - no optimizer specified.
     (@optimize_unary_param_impl $op:ident, $param:expr, $arg:expr ; ) => {
         Expr::$op($param, Box::new($arg))
     };
-    // Helper: Unary param optimization - custom optimizer specified
+    // Helper: Unary param optimization - custom optimizer specified.
     (@optimize_unary_param_impl $op:ident, $param:expr, $arg:expr ; $optimizer:expr) => {
         $optimizer($param, $arg)
     };
 
-    // Helper: Path reduction - standard behavior if not specified
+    // Helper: Path reduction - standard behavior if not specified.
     (@path_reduce_impl $machine:expr, $idx:expr, $mark:expr ; ) => {
         def_ops!(@standard_path_reduce $machine, $idx, $mark)
     };
-    // Helper: Path reduction - custom closure if specified
+    // Helper: Path reduction - custom closure if specified.
     (@path_reduce_impl $machine:expr, $idx:expr, $mark:expr ; $closure:expr) => {
         $closure($machine, $idx, $mark)
     };
 
-    // Helper: Standard path reduction (mark all children and execute)
+    // Helper: Standard path reduction (mark all children and execute).
     (@standard_path_reduce $machine:expr, $idx:expr, $mark:expr) => {{
         let instruction = &$machine.instructions[$idx];
         let out_reg = $machine.instruction_register($idx);
 
-        // Mark all children (except output register)
+        // Mark all children (except output register).
         instruction.for_each_input(|reg| {
             if reg != out_reg {
                 $mark(reg);

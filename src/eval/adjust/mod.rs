@@ -27,7 +27,7 @@ impl<D: Discretization> Machine<D> {
         let mut hints = vec![Hint::Skip; len];
         let mut converged = old_hint.len() == len;
 
-        // Roots should always be executed
+        // Roots should always be executed.
         for &root in &self.outputs {
             if let Some(idx) = self.register_to_instruction(root) {
                 hints[idx] = Hint::Execute;
@@ -83,8 +83,8 @@ fn backward_pass<D: Discretization>(machine: &mut Machine<D>, hints: &[Hint]) ->
     let mut vprecs_max = vec![0u32; instruction_count];
     let mut work_repeats = vec![true; instruction_count];
 
-    // Step 1: Add slack bits to outputs that hit discretization boundaries
-    // Slack grows exponentially with iteration to push intervals away from boundaries
+    // Step 1: Add slack bits to outputs that hit discretization boundaries.
+    // Slack grows exponentially with iteration to push intervals away from boundaries.
     let slack = slack_bits(machine.iteration, machine.slack_unit);
     for (&root, &boundary_issue) in machine.outputs.iter().zip(machine.output_distance.iter()) {
         if boundary_issue && let Some(idx) = machine.register_to_instruction(root) {
@@ -92,16 +92,16 @@ fn backward_pass<D: Discretization>(machine: &mut Machine<D>, hints: &[Hint]) ->
         }
     }
 
-    // Step 1b: Check if reevaluation is needed
+    // Step 1b: Check if reevaluation is needed.
 
-    // Mark all outputs for reevaluation
+    // Mark all outputs for reevaluation.
     for &root in &machine.outputs {
         if let Some(idx) = machine.register_to_instruction(root) {
             work_repeats[idx] = false;
         }
     }
 
-    // Traverse instructions from outputs to inputs to mark necessary reevaluations
+    // Traverse instructions from outputs to inputs to mark necessary reevaluations.
     for idx in (0..instruction_count).rev() {
         if work_repeats[idx] {
             continue;
@@ -121,7 +121,7 @@ fn backward_pass<D: Discretization>(machine: &mut Machine<D>, hints: &[Hint]) ->
         path_reduction(machine, idx, &mut mark);
     }
 
-    // Step 2: Precision tuning
+    // Step 2: Precision tuning.
     let mut vprecs_min = vec![0u32; instruction_count];
     if precision_tuning(
         machine,
@@ -133,16 +133,16 @@ fn backward_pass<D: Discretization>(machine: &mut Machine<D>, hints: &[Hint]) ->
         return true;
     }
 
-    // Step 3: Update repeats based on new precisions
+    // Step 3: Update repeats based on new precisions.
     let mut any_reevaluation =
         update_repeats(machine, &mut work_repeats, &vprecs_max, first_tuning_pass);
 
-    // Step 4: If no precision increase, try logspan bumps
+    // Step 4: If no precision increase, try logspan bumps.
     if !any_reevaluation {
-        // Bumps mode adds precision based on interval width (logspan) rather than slack
+        // Bumps mode adds precision based on interval width (logspan) rather than slack.
         machine.bumps = machine.bumps.saturating_add(1);
         machine.bumps_activated = true;
-        // Reset and recalculate precisions for bumps mode
+        // Reset and recalculate precisions for bumps mode.
         vprecs_max.fill(0);
         work_repeats.fill(false);
         if precision_tuning(
@@ -161,7 +161,7 @@ fn backward_pass<D: Discretization>(machine: &mut Machine<D>, hints: &[Hint]) ->
         }
     }
 
-    // Step 5: Update machine state
+    // Step 5: Update machine state.
     machine.repeats.copy_from_slice(&work_repeats);
     machine.precisions.copy_from_slice(&vprecs_max);
 

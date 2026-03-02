@@ -6,6 +6,7 @@ use crate::mpfr::{
 use rug::{Assign, Float, float::Round};
 
 impl Ival {
+    /// Compute the interval floating-point remainder `fmod(x, y)`.
     pub fn fmod_assign(&mut self, x: &Ival, y: &Ival) {
         let y_lo = y.lo.as_float();
         let y_hi = y.hi.as_float();
@@ -55,6 +56,7 @@ impl Ival {
         }
     }
 
+    /// Compute the interval remainder `remainder(x, y)`.
     pub fn remainder_assign(&mut self, x: &Ival, y: &Ival) {
         let y_lo = y.lo.as_float();
         let y_hi = y.hi.as_float();

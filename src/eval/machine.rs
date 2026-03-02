@@ -1,4 +1,4 @@
-//! Adaptive register machine evaluator
+//! Register machine evaluator.
 
 use std::collections::HashMap;
 
@@ -17,29 +17,56 @@ use crate::{
 use indexmap::IndexMap;
 use rug::Float;
 
-/// Convert floating-point values to a discrete representation
+/// A discretization represents some subset of the real numbers
+/// (for example, `f64`).
 pub trait Discretization: Clone {
+    /// The precision in bits needed to exactly represent a value in this subset.
     fn target(&self) -> u32;
+    /// Convert a bigfloat value to a value in this subset.
     fn convert(&self, idx: usize, v: &Float) -> Float;
+    /// Determine how close two values in the subset are.
+    ///
+    /// A distance of `0` indicates that the two values are equal.
+    /// A distance of `2` or greater indicates that the two values are far apart.
+    /// A value of exactly `1` indicates that the two values are sequential,
+    /// that is, that they share a rounding boundary.
+    /// This last case triggers special behavior inside Rival
+    /// to handle double-rounding issues.
     fn distance(&self, idx: usize, lo: &Float, hi: &Float) -> usize;
 }
 
-/// Interval evaluation machine with persistent state and discretization
+/// Interval evaluation machine with persistent state and discretization.
+///
+/// A machine is compiled from a list of real-number expressions via
+/// [`MachineBuilder::build`], and can then be evaluated at specific input
+/// points using [`Machine::apply`]. Returns an opaque machine that can
+/// be passed to [`Machine::apply`] to evaluate the compiled real expression
+/// on a specific point.
+///
+/// Internally, a machine converts expressions into a simple register machine.
+/// Compilation is fairly slow, so the ideal use case is to compile a function
+/// once and then apply it to multiple points.
+///
+/// If more than one expression is provided, common subexpressions will be
+/// identified and eliminated during compilation. This makes Rival ideal for
+/// evaluating large families of related expressions, a feature that is
+/// heavily used in [Herbie](https://herbie.uwplse.org). Note that each
+/// expression can use a different discretization.
 pub struct Machine<D: Discretization> {
     pub(crate) disc: D,
 
-    // Program structure
+    // Program structure.
     pub(crate) arguments: Vec<String>,
     pub(crate) instructions: Vec<Instruction>,
     pub(crate) outputs: Vec<usize>,
 
-    // Initial state computed during compilation
+    // Initial state computed during compilation.
     pub(crate) initial_repeats: Vec<bool>,
     pub(crate) initial_precisions: Vec<u32>,
     pub(crate) best_known_precisions: Vec<u32>,
     pub(crate) default_hint: Vec<Hint>,
 
-    // Runtime state
+    // Runtime state.
     pub(crate) registers: Vec<Ival>,
     pub(crate) precisions: Vec<u32>,
     pub(crate) repeats: Vec<bool>, // true = skip execution (no change needed)
@@ -48,11 +75,11 @@ pub struct Machine<D: Discretization> {
     pub(crate) iteration: usize,
     pub(crate) bumps: usize, // Number of times bumps mode has been activated
 
-    // Profiling
+    // Profiling.
     pub(crate) profiler: Profiler,
     pub(crate) profiling_enabled: bool,
 
-    // Configuration parameters
+    // Configuration parameters.
     pub(crate) max_precision: u32,
     pub(crate) min_precision: u32,
     pub(crate) lower_bound_early_stopping: bool,
@@ -60,18 +87,19 @@ pub struct Machine<D: Discretization> {
     pub(crate) bumps_activated: bool,
 }
 
+/// Hints guide the execution of individual instructions in the machine.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Hint {
-    /// Instruction executes normally
+    /// Instruction executes normally.
     Execute,
-    /// Instruction is not needed for the outputs being computed
-    /// Examples include dead code or an untaken branch
+    /// Instruction is not needed for the outputs being computed.
+    /// Examples include dead code or an untaken branch.
     Skip,
-    /// Skip execution and copy the chosen input
-    /// Examples include if (true) x else y => just use x
+    /// Skip execution and copy the value from the chosen input position.
+    /// For example, `if (true) x else y` becomes an alias to `x`.
     Alias(u8),
-    /// Skip execution because the result is known exactly
-    /// Examples include if (x > 0) where x = [5, 10] => result is [true, true]
+    /// Skip execution because the result is already known exactly.
+    /// For example, `if (x > 0)` where `x = [5, 10]` is always true.
     KnownBool(bool),
 }
 
@@ -81,7 +109,16 @@ pub(crate) struct PathOutcome {
     pub converged: bool,
 }
 
-/// Builder for constructing a machine with custom precision parameters
+/// Builder for constructing a [`Machine`] with custom parameters.
+///
+/// # Example
+///
+/// ```
+/// let machine = MachineBuilder::new(my_discretization)
+///     .min_precision(53)
+///     .max_precision(10_000)
+///     .build(exprs, vars);
+/// ```
 pub struct MachineBuilder<D: Discretization> {
     disc: D,
     min_precision: u32,
@@ -94,7 +131,13 @@ pub struct MachineBuilder<D: Discretization> {
 }
 
 impl<D: Discretization> MachineBuilder<D> {
-    /// Create a builder with default precision parameters
+    /// Create a builder with default precision parameters.
+    ///
+    /// Defaults:
+    /// - `min_precision`: 20 bits
+    /// - `max_precision`: 10,000 bits
+    /// - `slack_unit`: 512
+    /// - `profiling`: enabled, buffer capacity 1000
     pub fn new(disc: D) -> Self {
         Self {
             disc,
@@ -108,51 +151,60 @@ impl<D: Discretization> MachineBuilder<D> {
         }
     }
 
-    /// Set the minimum working precision in bits
+    /// Set the minimum working precision in bits.
     pub fn min_precision(mut self, v: u32) -> Self {
         self.min_precision = v;
         self
     }
 
-    /// Set the maximum working precision in bits
+    /// Set the maximum working precision in bits.
     pub fn max_precision(mut self, v: u32) -> Self {
         self.max_precision = v;
         self
     }
 
-    /// Set the slack unit used when computing slack bits
+    /// Set the slack unit used when computing slack bits.
     pub fn slack_unit(mut self, v: i64) -> Self {
         self.slack_unit = v;
         self
     }
 
-    /// Set the base tuning precision added to discretization targets
+    /// Set the base tuning precision added to discretization targets.
     pub fn base_tuning_precision(mut self, v: u32) -> Self {
         self.base_tuning_precision = v;
         self
     }
 
-    /// Set the amplification tuning bits added during propagation
+    /// Set the amplification tuning bits added during propagation.
     pub fn ampl_tuning_bits(mut self, v: u32) -> Self {
         self.ampl_tuning_bits = v;
         self
     }
 
-    /// Enable or disable per-instruction profiling (enabled by default)
+    /// Enable or disable per-instruction profiling (enabled by default).
     pub fn enable_profiling(mut self, enabled: bool) -> Self {
         self.profiling_enabled = enabled;
         self
     }
 
-    /// Set profiling buffer capacity (default 1000 records)
+    /// Set profiling buffer capacity (default 1000 records).
     pub fn profile_capacity(mut self, cap: usize) -> Self {
         self.profile_capacity = cap;
         self
     }
 
-    /// Build a machine by lowering expressions into instructions and allocating state
+    /// Compile expressions into a machine.
+    ///
+    /// `exprs` is a list of real-number expressions, using [`Expr`](super::ast::Expr).
+    /// `vars` is a list of the free variables of these expressions.
+    /// An empty `vars` list can be provided if the expressions
+    /// have no free variables.
+    ///
+    /// Returns a [`Machine`], an opaque type that can be passed to
+    /// [`Machine::apply`] to evaluate the compiled real expressions
+    /// on a specific point.
     pub fn build(self, exprs: Vec<Expr>, vars: Vec<String>) -> Machine<D> {
-        // Optimize and lower expressions to instructions
+        // Optimize and lower expressions to instructions.
         let optimized_exprs = exprs.into_iter().map(ops::optimize_expr).collect();
         let (instructions_map, roots) = lower(optimized_exprs, &vars);
         let var_count = vars.len();
@@ -220,7 +272,7 @@ impl<D: Discretization> MachineBuilder<D> {
 }
 
 impl<D: Discretization> Machine<D> {
-    /// Return the instruction index that writes to the given register when applicable
+    /// Return the instruction index that writes to the given register when applicable.
     #[inline]
     pub(crate) fn register_to_instruction(&self, register: usize) -> Option<usize> {
         let var_count = self.arguments.len();
@@ -231,78 +283,91 @@ impl<D: Discretization> Machine<D> {
         }
     }
 
-    /// Return the register index corresponding to an instruction index
+    /// Return the register index corresponding to an instruction index.
     #[inline]
     pub(crate) fn instruction_register(&self, index: usize) -> usize {
         self.arguments.len() + index
     }
 
-    /// Return the total number of instructions in the machine
+    /// Return the total number of instructions in the compiled machine.
     #[inline]
     pub fn instruction_count(&self) -> usize {
         self.instructions.len()
     }
 
+    /// Return the number of input arguments expected by this machine.
     #[inline]
     pub fn argument_count(&self) -> usize {
         self.arguments.len()
     }
 
+    /// Return the discretization's target precision in bits.
     #[inline]
     pub fn target_precision(&self) -> u32 {
         self.disc.target()
     }
 
+    /// Return the minimum working precision in bits.
     #[inline]
     pub fn min_precision(&self) -> u32 {
         self.min_precision
     }
 
+    /// Return the maximum working precision in bits.
     #[inline]
     pub fn max_precision(&self) -> u32 {
         self.max_precision
     }
 
+    /// Return the precision used for input arguments.
     #[inline]
     pub fn argument_precision(&self) -> u32 {
         self.disc.target().max(self.min_precision)
     }
 
+    /// Set the maximum working precision in bits.
     #[inline]
     pub fn set_max_precision(&mut self, bits: u32) {
         self.max_precision = bits;
     }
 
+    /// Return the number of iterations needed for the most recent call to [`Machine::apply`].
     #[inline]
     pub fn iterations(&self) -> usize {
         self.iteration
     }
 
+    /// Return the number of bumps detected during the most recent call to [`Machine::apply`].
     #[inline]
     pub fn bumps(&self) -> usize {
         self.bumps
     }
 
+    /// Enable or disable per-instruction profiling.
     #[inline]
     pub fn set_profiling_enabled(&mut self, enabled: bool) {
         self.profiling_enabled = enabled;
     }
 
+    /// Returns whether per-instruction profiling is enabled.
     #[inline]
     pub fn profiling_enabled(&self) -> bool {
         self.profiling_enabled
     }
 
+    /// Return a slice of recorded [`Execution`] records from the profiling buffer.
     #[inline]
     pub fn execution_records(&self) -> &[Execution] {
         self.profiler.records()
     }
 
+    /// Reset the profiling buffer, discarding all recorded executions.
     #[inline]
     pub fn clear_executions(&mut self) {
         self.profiler.reset();
     }
 
+    /// Return the operation name for each instruction in the machine.
     pub fn instruction_names(&self) -> Vec<&'static str> {
         self.instructions
             .iter()
@@ -310,7 +375,11 @@ impl<D: Discretization> Machine<D> {
             .collect()
     }
 
-    /// Reconfigure the machine to use the baseline strategy
+    /// Reconfigure the machine to use the baseline strategy.
+    ///
+    /// The baseline strategy uses a single global precision for all
+    /// instructions, doubling it each iteration. This is simpler but
+    /// less efficient than the default adaptive precision tuning.
     pub fn configure_baseline(&mut self) {
         let var_count = self.arguments.len();
         let start_prec = self.disc.target().saturating_add(10);
@@ -327,7 +396,8 @@ impl<D: Discretization> Machine<D> {
         );
     }
 
-    /// Return a snapshot of recorded executions and reset the internal buffer pointer.
+    /// Return a snapshot of recorded [`Execution`] records and reset
+    /// the internal buffer pointer.
     pub fn take_executions(&mut self) -> Vec<Execution> {
         let slice = self.execution_records().to_vec();
         self.clear_executions();
@@ -336,7 +406,7 @@ impl<D: Discretization> Machine<D> {
 }
 
 impl PathOutcome {
-    /// Create an execute outcome with the given convergence status
+    /// Create an execute outcome with the given convergence status.
     #[inline]
     pub(crate) fn execute(converged: bool) -> PathOutcome {
         PathOutcome {
@@ -345,7 +415,7 @@ impl PathOutcome {
         }
     }
 
-    /// Create an alias outcome for the provided input position
+    /// Create an alias outcome for the provided input position.
     #[inline]
     pub(crate) fn alias(idx: u8) -> PathOutcome {
         PathOutcome {
@@ -354,7 +424,7 @@ impl PathOutcome {
         }
     }
 
-    /// Create a known boolean outcome pinned to the provided value
+    /// Create a known boolean outcome pinned to the provided value.
     #[inline]
     pub(crate) fn known_bool(value: bool) -> PathOutcome {
         PathOutcome {
@@ -364,7 +434,7 @@ impl PathOutcome {
     }
 }
 
-/// Lower optimized expressions into instructions with common subexpression elimination
+/// Lower optimized expressions into instructions with common subexpression elimination.
 pub(crate) fn lower(
     exprs: Vec<Expr>,
     vars: &[String],
@@ -385,7 +455,7 @@ pub(crate) fn lower(
     (nodes, roots)
 }
 
-/// Determine initial precision targets for each instruction
+/// Determine initial precision targets for each instruction.
 fn make_initial_precisions<D: Discretization>(
     instructions: &[Instruction],
     var_count: usize,
@@ -396,14 +466,14 @@ fn make_initial_precisions<D: Discretization>(
 ) -> Vec<u32> {
     let mut precisions = vec![0u32; instructions.len()];
 
-    // Initialize output nodes to target + base precision
+    // Initialize output nodes to target + base precision.
     for &root in roots.iter() {
         if root >= var_count {
             precisions[root - var_count] = disc.target() + base_tuning_precision;
         }
     }
 
-    // Propagate precisions backward through the computation graph
+    // Propagate precisions backward through the computation graph.
     for idx in (0..instructions.len()).rev() {
         let current_prec = precisions[idx];
         instructions[idx].for_each_input(|reg| {
@@ -420,7 +490,7 @@ fn make_initial_precisions<D: Discretization>(
     precisions
 }
 
-/// Evaluate and mark constant-only nodes that can skip future execution
+/// Evaluate and mark constant-only nodes that can skip future execution.
 fn make_initial_repeats(
     instructions: &[Instruction],
     var_count: usize,

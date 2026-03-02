@@ -1,4 +1,4 @@
-//! Power interval operations
+//! Power interval operations.
 
 use super::value::{Endpoint, ErrorFlags, Ival, IvalClass, classify};
 use crate::mpfr::{
@@ -15,6 +15,7 @@ enum PosIvalClass1 {
 }
 
 impl Ival {
+    /// Compute the interval power `x^y`.
     pub fn pow_assign(&mut self, x: &Ival, y: &Ival) {
         let x_lo = x.lo.as_float();
         let x_hi = x.hi.as_float();

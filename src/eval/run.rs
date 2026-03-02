@@ -1,4 +1,4 @@
-//! Main evaluation loop with adaptive precision tuning
+//! Main evaluation loop with adaptive precision tuning.
 
 use itertools::{enumerate, izip};
 
@@ -10,7 +10,32 @@ use crate::eval::{
 use crate::interval::Ival;
 
 impl<D: Discretization> Machine<D> {
-    /// Evaluate the machine with given inputs until convergence or the iteration limit
+    /// Evaluate the compiled real expressions on an input point
+    /// represented as a slice of intervals.
+    ///
+    /// `args` must be the same length as the `vars` passed to
+    /// [`MachineBuilder::build`](super::machine::MachineBuilder::build). The output is a vector of output
+    /// values of the same length as the `exprs` passed to
+    /// [`MachineBuilder::build`](super::machine::MachineBuilder::build).
+    ///
+    /// `hint` can be provided from a previous call to
+    /// [`Machine::analyze_with_hints`] to speed up evaluation.
+    /// Pass `None` for default behavior.
+    ///
+    /// `max_iterations` sets the maximum number of re-evaluation
+    /// iterations before giving up.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RivalError::InvalidInput`] if the point is an
+    /// invalid input to at least one of the compiled expressions.
+    /// Returns [`RivalError::Unsamplable`] if Rival is unable to
+    /// evaluate at least one expression.
+    ///
+    /// Note that `apply` will only return `Ok` if it can prove
+    /// that it has correctly-rounded the output. It will only
+    /// return `InvalidInput` if it can prove that at least one
+    /// output expression in the machine throws on the given input.
     pub fn apply(
         &mut self,
         args: &[Ival],
@@ -35,7 +60,15 @@ impl<D: Discretization> Machine<D> {
         Err(RivalError::Unsamplable)
     }
 
-    /// Evaluate the machine using the baseline strategy
+    /// Evaluate the machine using the baseline strategy.
+    ///
+    /// The baseline strategy uses a single global precision for all
+    /// instructions, doubling it each iteration. This is simpler but
+    /// less efficient than [`Machine::apply`], which uses adaptive
+    /// per-instruction precision tuning.
+    ///
+    /// Call [`Machine::configure_baseline`] before using this method
+    /// to set up the machine for baseline evaluation.
     pub fn apply_baseline(
         &mut self,
         args: &[Ival],
@@ -74,7 +107,11 @@ impl<D: Discretization> Machine<D> {
         }
     }
 
-    /// Analyze an input rectangle using the baseline strategy
+    /// Analyze an input rectangle using the baseline strategy,
+    /// returning status, next hints, and a convergence flag.
+    ///
+    /// See [`Machine::analyze_with_hints`] for details on the
+    /// return values.
     pub fn analyze_baseline_with_hints(
         &mut self,
         rect: &[Ival],
@@ -101,13 +138,16 @@ impl<D: Discretization> Machine<D> {
         (status, next_hint, converged)
     }
 
-    /// Analyze a hyper-rectangle using the baseline strategy and return only the boolean interval status.
+    /// Analyze a hyper-rectangle using the baseline strategy and
+    /// return only the boolean interval status.
+    ///
+    /// See [`Machine::analyze`] for details on the return value.
     pub fn analyze_baseline(&mut self, rect: &[Ival]) -> Ival {
         let (status, _hint, _conv) = self.analyze_baseline_with_hints(rect, None);
         status
     }
 
-    /// Run a single iteration with precision tuning and hint-guided evaluation
+    /// Run a single iteration with precision tuning and hint-guided evaluation.
     pub(crate) fn run_iteration(
         &mut self,
         iteration: usize,
@@ -122,7 +162,24 @@ impl<D: Discretization> Machine<D> {
         self.collect_outputs()
     }
 
-    /// Analyze an input rectangle and return status summary, next hints, and convergence flag
+    /// Analyze an input rectangle using adaptive precision tuning.
+    ///
+    /// Returns a `(status, hints, converged)` tuple:
+    ///
+    /// - `status` is a boolean interval indicating whether a call to
+    ///   [`Machine::apply`] with inputs in the supplied `rect` is
+    ///   guaranteed to raise an error. If false is returned, there is
+    ///   no point calling `apply` with any point in the input range.
+    ///   If uncertain, some points may raise errors while others may
+    ///   not, though nothing is guaranteed. If true is returned,
+    ///   `InvalidInput` will not be raised for any point in the range;
+    ///   however, `Unsamplable` may still be raised.
+    ///
+    /// - `hints` is a vector of [`Hint`]s that can be passed to
+    ///   subsequent calls to [`Machine::apply`] to skip unnecessary
+    ///   computation.
+    ///
+    /// - `converged` indicates whether the analysis has converged.
     pub fn analyze_with_hints(
         &mut self,
         rect: &[Ival],
@@ -130,7 +187,7 @@ impl<D: Discretization> Machine<D> {
     ) -> (Ival, Vec<Hint>, bool) {
         self.load_arguments(rect);
 
-        // Use provided hint or default
+        // Use provided hint or default.
         let tmp;
         let hint_slice = if let Some(h) = hint {
             h
@@ -139,7 +196,7 @@ impl<D: Discretization> Machine<D> {
             &tmp
         };
 
-        // One analysis iteration at sampling iteration 0
+        // One analysis iteration at sampling iteration 0.
         self.iteration = 0;
         self.adjust(hint_slice);
         self.run_with_hint(hint_slice);
@@ -151,13 +208,28 @@ impl<D: Discretization> Machine<D> {
         (status, next_hint, converged)
     }
 
-    /// Analyze a hyper-rectangle and return only the boolean interval status
+    /// Analyze a hyper-rectangle and return only the boolean interval status.
+    ///
+    /// Returns a boolean interval which indicates whether a call to
+    /// [`Machine::apply`], with inputs in the supplied `rect`, is
+    /// guaranteed to raise an error.
+    ///
+    /// In other words, if false is returned, there is no point calling
+    /// `apply` with any point in the input range. If uncertain, some
+    /// points in the range may raise errors, while others may not,
+    /// though nothing is guaranteed. If true is returned,
+    /// [`RivalError::InvalidInput`] will not be raised for any point
+    /// in the range. However, [`RivalError::Unsamplable`] may still
+    /// be raised.
+    ///
+    /// The advantage of `analyze` over `apply` is that it applies to
+    /// whole ranges of input points and is much faster.
     pub fn analyze(&mut self, rect: &[Ival]) -> Ival {
         let (status, _hint, _conv) = self.analyze_with_hints(rect, None);
         status
     }
 
-    /// Load argument intervals into the front of the register file
+    /// Load argument intervals into the front of the register file.
     pub(crate) fn load_arguments(&mut self, args: &[Ival]) {
         assert_eq!(args.len(), self.arguments.len(), "Argument count mismatch");
         for (i, arg) in args.iter().cloned().enumerate() {
@@ -174,9 +246,9 @@ impl<D: Discretization> Machine<D> {
         }
     }
 
-    /// Execute instructions once using the supplied precision and hint plan
+    /// Execute instructions once using the supplied precision and hint plan.
     fn run_with_hint(&mut self, hints: &[Hint]) {
-        // On the first iteration use the initial plan; subsequent iterations use tuned state
+        // On the first iteration use the initial plan; subsequent iterations use tuned state.
         let (precisions, repeats) = if self.iteration == 0 {
             (&self.initial_precisions[..], &self.initial_repeats[..])
         } else {
@@ -191,7 +263,7 @@ impl<D: Discretization> Machine<D> {
             }
             let out_reg = self.instruction_register(idx);
 
-            // Hints can override execution
+            // Hints can override execution.
             match hint {
                 Hint::Skip => {}
                 Hint::Execute => {
@@ -211,7 +283,7 @@ impl<D: Discretization> Machine<D> {
                         execute::evaluate_instruction(instruction, &mut self.registers, precision)
                     }
                 }
-                // Path reduction aliasing the output of an instruction to one of its inputs
+                // Path reduction aliasing the output of an instruction to one of its inputs.
                 Hint::Alias(pos) => {
                     if let Some(src_reg) = instruction.data.input_at(*pos as usize)
                         && src_reg != out_reg
@@ -226,7 +298,7 @@ impl<D: Discretization> Machine<D> {
                         dst.assign_from(src);
                     }
                 }
-                // Use pre-computed boolean value
+                // Use pre-computed boolean value.
                 Hint::KnownBool(value) => {
                     self.registers[out_reg] = Ival::bool_interval(*value, *value);
                 }
@@ -243,13 +315,13 @@ impl<D: Discretization> Machine<D> {
             None
         };
 
-        // Baseline uses a single global precision for all instructions
+        // Baseline uses a single global precision for all instructions.
         self.precisions.fill(new_prec);
 
         if self.iteration != 0 {
             let var_count = self.arguments.len();
 
-            // Determine which instructions can affect outputs (must be executed)
+            // Determine which instructions can affect outputs (must be executed).
             let mut useful = vec![false; instruction_count];
             for &root in &self.outputs {
                 if let Some(idx) = self.register_to_instruction(root) {
@@ -274,7 +346,7 @@ impl<D: Discretization> Machine<D> {
                 });
             }
 
-            // Set repeats and update constant precisions
+            // Set repeats and update constant precisions.
             for idx in 0..instruction_count {
                 let is_constant = self.initial_repeats[idx];
                 let best_known = self.best_known_precisions[idx];
@@ -311,7 +383,7 @@ impl<D: Discretization> Machine<D> {
         }
     }
 
-    /// Gather outputs and translate evaluation state into convergence results
+    /// Gather outputs and translate evaluation state into convergence results.
     fn collect_outputs(&mut self) -> Result<Option<Vec<Ival>>, RivalError> {
         let (good, done, bad, stuck) = self.return_flags();
         let mut outputs = Vec::with_capacity(self.outputs.len());
@@ -333,7 +405,7 @@ impl<D: Discretization> Machine<D> {
         Ok(None)
     }
 
-    /// Compute (good, done, bad, stuck) flags and update output_distance like Racket's rival-machine-return
+    /// Compute (good, done, bad, stuck) flags and update output_distance like Racket's rival-machine-return.
     fn return_flags(&mut self) -> (bool, bool, bool, bool) {
         let mut good = true;
         let mut done = true;
@@ -363,10 +435,22 @@ impl<D: Discretization> Machine<D> {
     }
 }
 
+/// Errors that can occur during [`Machine::apply`].
+///
+/// Note that [`Machine::apply`] will only return a result if it can prove
+/// that it has correctly-rounded the output, and it will only return
+/// [`RivalError::InvalidInput`] if it can prove that at least one of the
+/// output expressions in the machine throws on the given input.
 #[derive(thiserror::Error, Debug)]
 pub enum RivalError {
+    /// The input point is invalid for at least one compiled expression.
+    ///
+    /// For example, taking the square root of a negative number, or
+    /// dividing by zero.
     #[error("Invalid input for rival machine")]
     InvalidInput,
+    /// Rival was unable to correctly round the output within the
+    /// configured precision and iteration limits.
     #[error("Unsamplable input for rival machine")]
     Unsamplable,
 }

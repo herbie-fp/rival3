@@ -171,7 +171,7 @@ unsafe fn apply_inner(
     n_out: usize,
     hints: *const RivalHints,
     max_precision: u32,
-    // Determines whether to use use apply or apply_baseline
+    // Determines whether to use use apply or apply_baseline.
     max_iterations: Option<usize>,
 ) -> RivalError {
     if n_args != wrapper.n_vars || n_out != wrapper.n_exprs {

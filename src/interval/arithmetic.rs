@@ -6,6 +6,7 @@ use crate::{
 use rug::{Assign, Float, float::Round, ops::AssignRound};
 
 impl Ival {
+    /// Compute the interval sum `a + b`.
     pub fn add_assign(&mut self, a: &Ival, b: &Ival) {
         self.lo.immovable =
             endpoint_binary(mpfr_add, &a.lo, &b.lo, self.lo.as_float_mut(), Round::Down);
@@ -14,6 +15,7 @@ impl Ival {
         self.err = a.err.union(&b.err);
     }
 
+    /// Compute the interval difference `a - b`.
     pub fn sub_assign(&mut self, a: &Ival, b: &Ival) {
         self.lo.immovable =
             endpoint_binary(mpfr_sub, &a.lo, &b.hi, self.lo.as_float_mut(), Round::Down);
@@ -22,6 +24,7 @@ impl Ival {
         self.err = a.err.union(&b.err);
     }
 
+    /// Compute the interval product `a * b`.
     pub fn mul_assign(&mut self, a: &Ival, b: &Ival) {
         let class_a = classify(a, false);
         let class_b = classify(b, false);
@@ -66,6 +69,7 @@ impl Ival {
         }
     }
 
+    /// Compute the interval quotient `a / b`.
     pub fn div_assign(&mut self, a: &Ival, b: &Ival) {
         let class_a = classify(a, true);
         let class_b = classify(b, true);
@@ -114,12 +118,14 @@ impl Ival {
         }
     }
 
+    /// Compute the interval fused multiply-add `a * b + c`.
     pub fn fma_assign(&mut self, a: &Ival, b: &Ival, c: &Ival) {
         let mut product = Ival::zero(self.prec());
         product.mul_assign(a, b);
         self.add_assign(&product, c);
     }
 
+    /// Compute the interval positive difference `fdim(x, y) = max(x - y, 0)`.
     pub fn fdim_assign(&mut self, x: &Ival, y: &Ival) {
         let mut diff = Ival::zero(self.prec());
         diff.sub_assign(x, y);
@@ -127,6 +133,7 @@ impl Ival {
         self.fmax_assign(&diff, &zero_ival);
     }
 
+    /// Compute the interval Euclidean distance `hypot(x, y) = sqrt(x² + y²)`.
     pub fn hypot_assign(&mut self, x: &Ival, y: &Ival) {
         let mut abs_x = Ival::zero(self.prec());
         let mut abs_y = Ival::zero(self.prec());

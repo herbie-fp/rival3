@@ -1,4 +1,4 @@
-//! Core interval operations
+//! Core interval operations.
 
 use super::value::{Endpoint, ErrorFlags, Ival, IvalClass, classify};
 use crate::mpfr::{
@@ -12,6 +12,11 @@ use crate::mpfr::{
 use rug::{Assign, Float, float::Round, ops::NegAssign};
 
 impl Ival {
+    /// Lift a (weakly) monotonic MPFR function to a function on intervals.
+    ///
+    /// A weakly monotonic function is one where larger inputs produce
+    /// larger (or equal) outputs. Note that if a non-monotonic function
+    /// is passed, the results will not be sound.
     pub fn monotonic_assign<F>(&mut self, mpfr_func: &F, a: &Ival)
     where
         F: Fn(&Float, &mut Float, Round) -> bool,
@@ -21,6 +26,11 @@ impl Ival {
         self.err = a.err;
     }
 
+    /// Lift a (weakly) co-monotonic MPFR function to a function on intervals.
+    ///
+    /// A weakly co-monotonic function is one where larger inputs produce
+    /// smaller (or equal) outputs. Note that if a non-co-monotonic function
+    /// is passed, the results will not be sound.
     pub fn comonotonic_assign<F>(&mut self, mpfr_func: &F, a: &Ival)
     where
         F: Fn(&Float, &mut Float, Round) -> bool,
@@ -39,6 +49,7 @@ impl Ival {
         self.err = a.err;
     }
 
+    /// Compute the interval negation of `a`.
     pub fn neg_assign(&mut self, a: &Ival) {
         self.comonotonic_assign(&mpfr_neg, a);
     }
@@ -49,6 +60,7 @@ impl Ival {
         self.neg_assign(a);
     }
 
+    /// Compute the interval absolute value of `x`.
     pub fn fabs_assign(&mut self, x: &Ival) {
         match classify(x, false) {
             IvalClass::Neg => self.comonotonic_assign(&mpfr_abs, x),
@@ -115,6 +127,7 @@ impl Ival {
         }
     }
 
+    /// Compute the interval square root of `a`.
     pub fn sqrt_assign(&mut self, a: &Ival) {
         // TODO: To get rid of all these clones when clamping, we can add inplace operators to mpfr.rs
         let mut clamped = a.clone();
@@ -122,10 +135,12 @@ impl Ival {
         self.monotonic_assign(&mpfr_sqrt, &clamped);
     }
 
+    /// Compute the interval cube root of `a`.
     pub fn cbrt_assign(&mut self, a: &Ival) {
         self.monotonic_assign(&mpfr_cbrt, a);
     }
 
+    /// Compute the interval exponential of `a`.
     pub fn exp_assign(&mut self, a: &Ival) {
         self.monotonic_assign(&mpfr_exp, a);
         let thresh = exp_overflow_threshold(self.prec());
@@ -134,6 +149,7 @@ impl Ival {
         self.overflows_loose_at(a, neg, thresh);
     }
 
+    /// Compute the interval base-2 exponential of `a`.
     pub fn exp2_assign(&mut self, a: &Ival) {
         self.monotonic_assign(&mpfr_exp2, a);
         let thresh = exp2_overflow_threshold(self.prec());
@@ -142,6 +158,7 @@ impl Ival {
         self.overflows_loose_at(a, neg, thresh);
     }
 
+    /// Compute the interval `exp(a) - 1`.
     pub fn expm1_assign(&mut self, a: &Ival) {
         self.monotonic_assign(&mpfr_expm1, a);
         let thresh = exp_overflow_threshold(self.prec());
@@ -150,24 +167,28 @@ impl Ival {
         self.overflows_at(a, neg, thresh);
     }
 
+    /// Compute the interval natural logarithm of `a`.
     pub fn log_assign(&mut self, a: &Ival) {
         let mut clamped = a.clone();
         clamped.clamp_strict(zero(self.prec()), inf(self.prec()));
         self.monotonic_assign(&mpfr_log, &clamped);
     }
 
+    /// Compute the interval base-2 logarithm of `a`.
     pub fn log2_assign(&mut self, a: &Ival) {
         let mut clamped = a.clone();
         clamped.clamp_strict(zero(self.prec()), inf(self.prec()));
         self.monotonic_assign(&mpfr_log2, &clamped);
     }
 
+    /// Compute the interval base-10 logarithm of `a`.
     pub fn log10_assign(&mut self, a: &Ival) {
         let mut clamped = a.clone();
         clamped.clamp_strict(zero(self.prec()), inf(self.prec()));
         self.monotonic_assign(&mpfr_log10, &clamped);
     }
 
+    /// Compute the interval `log(1 + a)`.
     pub fn log1p_assign(&mut self, a: &Ival) {
         let mut clamped = a.clone();
         let neg_one = Float::with_val(self.prec(), -1);
@@ -175,6 +196,7 @@ impl Ival {
         self.monotonic_assign(&mpfr_log1p, &clamped);
     }
 
+    /// Compute the interval `logb` (exponent extraction) of `a`.
     pub fn logb_assign(&mut self, a: &Ival) {
         let mut abs_a = Ival::zero(a.max_prec());
         abs_a.exact_fabs_assign(a);
@@ -184,6 +206,7 @@ impl Ival {
         self.floor_assign(&tmp);
     }
 
+    /// Compute the interval arcsine of `a`.
     pub fn asin_assign(&mut self, a: &Ival) {
         let mut clamped = a.clone();
         let one = Float::with_val(self.prec(), 1);
@@ -192,6 +215,7 @@ impl Ival {
         self.monotonic_assign(&mpfr_asin, &clamped);
     }
 
+    /// Compute the interval arccosine of `a`.
     pub fn acos_assign(&mut self, a: &Ival) {
         let mut clamped = a.clone();
         let one = Float::with_val(self.prec(), 1);
@@ -200,10 +224,12 @@ impl Ival {
         self.comonotonic_assign(&mpfr_acos, &clamped);
     }
 
+    /// Compute the interval arctangent of `a`.
     pub fn atan_assign(&mut self, a: &Ival) {
         self.monotonic_assign(&mpfr_atan, a);
     }
 
+    /// Compute the interval two-argument arctangent `atan2(y, x)`.
     pub fn atan2_assign(&mut self, y: &Ival, x: &Ival) {
         let class_x = classify(x, true);
         let class_y = classify(y, true);
@@ -258,6 +284,7 @@ impl Ival {
         }
     }
 
+    /// Compute the interval hyperbolic sine of `a`.
     pub fn sinh_assign(&mut self, a: &Ival) {
         self.monotonic_assign(&mpfr_sinh, a);
         let thresh = sinh_overflow_threshold(self.prec());
@@ -266,6 +293,7 @@ impl Ival {
         self.overflows_at(a, neg, thresh);
     }
 
+    /// Compute the interval hyperbolic cosine of `a`.
     pub fn cosh_assign(&mut self, a: &Ival) {
         let mut abs_a = Ival::zero(a.max_prec());
         abs_a.exact_fabs_assign(a);
@@ -276,14 +304,17 @@ impl Ival {
         self.overflows_at(&abs_a, neg, thresh);
     }
 
+    /// Compute the interval hyperbolic tangent of `a`.
     pub fn tanh_assign(&mut self, a: &Ival) {
         self.monotonic_assign(&mpfr_tanh, a);
     }
 
+    /// Compute the interval inverse hyperbolic sine of `a`.
     pub fn asinh_assign(&mut self, a: &Ival) {
         self.monotonic_assign(&mpfr_asinh, a);
     }
 
+    /// Compute the interval inverse hyperbolic cosine of `a`.
     pub fn acosh_assign(&mut self, a: &Ival) {
         let mut clamped = a.clone();
         let one = Float::with_val(self.prec(), 1);
@@ -291,6 +322,7 @@ impl Ival {
         self.monotonic_assign(&mpfr_acosh, &clamped);
     }
 
+    /// Compute the interval inverse hyperbolic tangent of `a`.
     pub fn atanh_assign(&mut self, a: &Ival) {
         let mut clamped = a.clone();
         let one = Float::with_val(self.prec(), 1);
@@ -299,34 +331,42 @@ impl Ival {
         self.monotonic_assign(&mpfr_atanh, &clamped);
     }
 
+    /// Compute the interval error function of `a`.
     pub fn erf_assign(&mut self, a: &Ival) {
         self.monotonic_assign(&mpfr_erf, a);
     }
 
+    /// Compute the interval complementary error function of `a`.
     pub fn erfc_assign(&mut self, a: &Ival) {
         self.comonotonic_assign(&mpfr_erfc, a);
     }
 
+    /// Compute the interval round-to-integer of `a`.
     pub fn rint_assign(&mut self, a: &Ival) {
         self.monotonic_assign(&mpfr_rint, a);
     }
 
+    /// Compute the interval round-to-integer of `a`.
     pub fn round_assign(&mut self, a: &Ival) {
         self.monotonic_assign(&mpfr_round, a);
     }
 
+    /// Compute the interval ceiling of `a`.
     pub fn ceil_assign(&mut self, a: &Ival) {
         self.monotonic_assign(&mpfr_ceil, a);
     }
 
+    /// Compute the interval floor of `a`.
     pub fn floor_assign(&mut self, a: &Ival) {
         self.monotonic_assign(&mpfr_floor, a);
     }
 
+    /// Compute the interval truncation of `a`.
     pub fn trunc_assign(&mut self, a: &Ival) {
         self.monotonic_assign(&mpfr_trunc, a);
     }
 
+    /// Compute the interval minimum of `a` and `b`.
     pub fn fmin_assign(&mut self, a: &Ival, b: &Ival) {
         let lo_exact = mpfr_min(
             a.lo.as_float(),
@@ -356,6 +396,7 @@ impl Ival {
         self.err = a.err.union(&b.err);
     }
 
+    /// Compute the interval maximum of `a` and `b`.
     pub fn fmax_assign(&mut self, a: &Ival, b: &Ival) {
         let lo_exact = mpfr_max(
             a.lo.as_float(),
@@ -385,6 +426,7 @@ impl Ival {
         self.err = a.err.union(&b.err);
     }
 
+    /// Compute the interval `copysign(x, y)`.
     pub fn copysign_assign(&mut self, x: &Ival, y: &Ival) {
         let mut abs_x = Ival::zero(self.prec());
         abs_x.fabs_assign(x);

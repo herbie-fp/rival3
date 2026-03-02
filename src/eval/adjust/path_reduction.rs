@@ -131,7 +131,7 @@ where
         return PathOutcome::execute(false);
     }
 
-    // Non-unary assert: treat as already converged execute
+    // Non-unary assert: treat as already converged execute.
     PathOutcome::execute(true)
 }
 
@@ -184,7 +184,7 @@ where
 
         match cmp.known_bool() {
             Some(true) => {
-                // lhs > rhs
+                // lhs > rhs.
                 let (alias_idx, child) = if prefer_lhs_when_greater {
                     (0, *lhs)
                 } else {
@@ -194,7 +194,7 @@ where
                 return PathOutcome::alias(alias_idx);
             }
             Some(false) => {
-                // lhs <= rhs
+                // lhs <= rhs.
                 let (alias_idx, child) = if prefer_lhs_when_greater {
                     (1, *rhs)
                 } else {
@@ -204,7 +204,7 @@ where
                 return PathOutcome::alias(alias_idx);
             }
             None => {
-                // Uncertain
+                // Uncertain.
                 mark_inputs(out_reg, &mut mark, [*lhs, *rhs]);
                 return PathOutcome::execute(false);
             }

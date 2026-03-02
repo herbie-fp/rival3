@@ -45,7 +45,7 @@ pub(super) fn precision_tuning<D: Discretization>(
             return true;
         }
 
-        // Propagate precision requirements to children based on error amplification
+        // Propagate precision requirements to children based on error amplification.
         match &instruction.data {
             InstructionData::Literal { .. }
             | InstructionData::Rational { .. }
@@ -160,7 +160,7 @@ fn propagate_child<D: Discretization>(
     if let Some(child_idx) = machine.register_to_instruction(child_reg) {
         // TODO: We actually don't need clamp_to_bits here-- we can simply cast as u32 because we
         // assume that all stored precisions are positive and a cast won't overflow; see if there's
-        // any noticeable performance difference if we don't use clamp_to_bits (likely not significant)
+        // any noticeable performance difference if we don't use clamp_to_bits (likely not significant).
         vprecs_max[child_idx] = clamp_to_bits(
             (vprecs_max[child_idx] as i64).max((parent_upper as i64).saturating_add(bounds.upper)),
         );
@@ -202,7 +202,7 @@ pub(super) fn update_repeats<D: Discretization>(
             old_precision
         };
 
-        // Recompute if precision increases or if any child recomputes
+        // Recompute if precision increases or if any child recomputes.
         let self_reg = machine.instruction_register(idx);
         let mut children_repeat = true;
         instr.data.for_each_input(|reg| {

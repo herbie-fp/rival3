@@ -19,7 +19,7 @@ impl Discretization for Fp64Discretization {
     fn distance(&self, _idx: usize, lo: &Float, hi: &Float) -> usize {
         let x = lo.to_f64();
         let y = hi.to_f64();
-        // Handle things like signed zeros (so that -0.0 == 0.0)
+        // Handle things like signed zeros (so that -0.0 == 0.0).
         if x == y {
             return 0;
         }
@@ -52,24 +52,24 @@ fn parse_sexpr(s: &str) -> Result<SExpr, String> {
 fn parse_sexpr_inner<I: Iterator<Item = char>>(
     chars: &mut std::iter::Peekable<I>,
 ) -> Result<SExpr, String> {
-    // Skip whitespace
+    // Skip whitespace.
     while chars.peek().map_or(false, |c| c.is_whitespace()) {
         chars.next();
     }
 
     match chars.peek() {
         Some('(') => {
-            chars.next(); // consume '('
+            chars.next(); // consume '('.
             let mut list = Vec::new();
             loop {
-                // Skip whitespace inside list
+                // Skip whitespace inside list.
                 while chars.peek().map_or(false, |c| c.is_whitespace()) {
                     chars.next();
                 }
 
                 match chars.peek() {
                     Some(')') => {
-                        chars.next(); // consume ')'
+                        chars.next(); // consume ')'.
                         return Ok(SExpr::List(list));
                     }
                     Some(_) => {
@@ -409,7 +409,7 @@ fn main() {
         })
         .collect();
 
-    // Warm-up run just like the racket repl
+    // Warm-up run just like the racket repl.
     let _ = machine.apply(&arg_ivals, None, 5);
 
     let start = std::time::Instant::now();
