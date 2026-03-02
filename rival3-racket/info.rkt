@@ -6,3 +6,5 @@
 (define pkg-desc "Racket bindings to Rival3")
 
 (define deps '(("base" #:version "8.0") "math-lib"))
+(define build-deps '("scribble-lib" "racket-doc" "math-doc"))
+(define scribblings '(("scribblings/rival.scrbl" (multi-page) (library))))
