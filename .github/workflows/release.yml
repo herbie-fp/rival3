@@ -1,0 +1,90 @@
+name: Build new Rival 3 release
+
+on:
+  push:
+    tags:
+    - 'v*'
+
+jobs:
+  build:
+    name: Build
+    strategy:
+      matrix:     # manual matrix
+        include:
+          - os: windows-latest
+            os-name: windows
+            arch: x64
+          - os: ubuntu-20.04  # keep old for glibc compatability
+            os-name: ubuntu
+            arch: x64
+          - os: macos-latest
+            os-name: macOS-m1
+            arch: arm64
+          - os: macos-15-intel
+            os-name: macOS
+            arch: x64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Racket
+        uses: Bogdanp/setup-racket@v1.14
+        with:
+          version: 8.18
+          architecture: ${{ matrix.arch }}
+
+      - name: Install Rust compiler
+        uses: dtolnay/rust-toolchain@stable
+        with:
+            toolchain: stable
+            
+      - name: build rival3-ffi
+        run: cargo build --release --manifest-path=rival3-ffi/Cargo.toml
+      
+      - name: Create tarball
+        run: raco pkg create --format zip rival3-racket
+
+      - name: Rename tarballs
+        run: |
+          mv rival3-racket.zip rival3-racket-${{ matrix.os-name }}.zip
+          mv rival3-racket.zip.CHECKSUM rival3-racket-${{ matrix.os-name }}.zip.CHECKSUM
+
+      - name: Upload pre-built rival3-racket
+        uses: actions/upload-artifact@v4
+        with:
+          path: rival3-racket-${{ matrix.os-name }}.zip
+          name: rival3-racket-${{ matrix.os-name }}.zip
+          if-no-files-found: error
+
+      - name: Upload pre-built rival3-racket checksum
+        uses: actions/upload-artifact@v4
+        with:
+          path: rival3-racket-${{ matrix.os-name }}.zip.CHECKSUM
+          name: rival3-racket-${{ matrix.os-name }}.zip.CHECKSUM
+          if-no-files-found: error
+
+  release:
+    name: Create Initial Release
+    runs-on: ubuntu-latest
+    needs: build
+    
+    steps:
+      - name: Download pre-built artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: rival3-racket-*
+          merge-multiple: true
+
+      - name: Create Release
+        uses: ncipollo/release-action@v1.20.0
+        with:
+          tag: ${{ github.ref }}
+          name: ${{ github.ref }}
+          commit: ${{ github.commit }}
+          draft: true
+          prerelease: false
+          artifactErrorsFailBuild: true
+          artifacts: "artifacts/*"
