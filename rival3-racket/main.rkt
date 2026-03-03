@@ -66,17 +66,25 @@
 (define *rival-max-iterations* (make-parameter 5))
 (define *rival-profile-executions* (make-parameter 1000))
 
-(define-runtime-path librival-path
-                     (build-path ".."
-                                 "rival3-ffi"
-                                 "target"
-                                 "release"
-                                 (string-append (case (system-type)
-                                                  [(windows) "rival3_ffi"]
-                                                  [else "librival3_ffi"])
-                                                (bytes->string/utf-8 (system-type 'so-suffix)))))
+(define-runtime-path native-root (build-path "private" "native"))
+(define-runtime-path dev-native-root
+  (build-path ".." "rival3-ffi" "target" "release"))
 
-(define-ffi-definer define-rival (ffi-lib librival-path))
+(define _lib-name
+  (string-append (case (system-type)
+                   [(windows) "rival3_ffi"]
+                   [else      "librival3_ffi"])
+                 (bytes->string/utf-8 (system-type 'so-suffix))))
+
+(define _lib-path
+  (let ([pkg-path (build-path native-root
+                              (system-library-subpath #f)
+                              _lib-name)])
+    (if (file-exists? pkg-path)
+        pkg-path
+        (build-path dev-native-root _lib-name))))
+
+(define-ffi-definer define-rival (ffi-lib _lib-path))
 
 (define _rival-error (_enum '(ok = 0 invalid_input = -1 unsamplable = -2) _int32))
 (define _analyze-result (_list-struct _rival-error _stdbool _stdbool _stdbool _pointer))

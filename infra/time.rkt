@@ -8,7 +8,7 @@
          profile)
 (require json)
 
-(require "../rival3-racket/main.rkt"
+(require rival3-racket
          "profile.rkt"
          "run-sollya.rkt")
 
