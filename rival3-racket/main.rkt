@@ -213,7 +213,7 @@
 
 (let ([v (rival_version)])
   (unless (= v 1)
-    (error 'rival3-racket "ABI version mismatch: expected 1, got ~a" v)))
+    (error 'rival3 "ABI version mismatch: expected 1, got ~a" v)))
 
 (struct machine-wrapper (ptr n-vars n-exprs discs arg-buf arg-bfs out-buf out-bfs rect-buf name-table)
   #:property prop:cpointer

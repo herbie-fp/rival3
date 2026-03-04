@@ -2,11 +2,11 @@
 
 @(require (for-label "../main.rkt" racket/base math/bigfloat))
 
-@title{Rival3: Real Computation via Interval Arithmetic}
+@title{Rival 3: Real Computation via Interval Arithmetic}
 @author{Pavel Panchekha, Artem Yadrov, Oliver Flatt, Aditya Kumar}
-@defmodule[rival3-racket]
+@defmodule[rival3]
 
-Rival3 is Racket FFI bindings to a Rust implementation of Rival,
+Rival 3 is Racket FFI bindings to a Rust implementation of Rival,
 an advanced interval arithmetic library for
 arbitrary-precision computation of complex mathematical expressions.
 Its interval arithmetic is valid and attempts to be tight.

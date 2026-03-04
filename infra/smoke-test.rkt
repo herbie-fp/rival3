@@ -1,6 +1,6 @@
 #lang racket
 
-(require rival3-racket
+(require rival3
          math/bigfloat)
 
 (define machine
