@@ -20,7 +20,7 @@ jobs:
             lib_name: rival3_ffi.dll
             artifact_name: native-win32-x86_64
 
-          - os: ubuntu-20.04 # keep old glibc for compatibility
+          - os: ubuntu-latest
             lib_name: librival3_ffi.so
             artifact_name: native-x86_64-linux
 
@@ -137,7 +137,7 @@ jobs:
         include:
           - os: windows-latest
             arch: x64
-          - os: ubuntu-20.04
+          - os: ubuntu-latest
             arch: x64
           - os: macos-latest
             arch: arm64
