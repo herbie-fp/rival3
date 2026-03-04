@@ -19,37 +19,41 @@ jobs:
           - os: windows-latest
             lib_name: rival3_ffi.dll
             artifact_name: native-win32-x86_64
+            lib_dir: rival3-ffi/target/release
 
           - os: ubuntu-latest
             lib_name: librival3_ffi.so
             artifact_name: native-x86_64-linux
+            lib_dir: rival3-ffi/target/x86_64-unknown-linux-gnu/release
 
           - os: macos-latest
             lib_name: librival3_ffi.dylib
             artifact_name: native-aarch64-macosx
+            lib_dir: rival3-ffi/target/release
 
           - os: macos-15-intel
             lib_name: librival3_ffi.dylib
             artifact_name: native-x86_64-macosx
+            lib_dir: rival3-ffi/target/release
 
     runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v5
 
-      - name: Install Rust compiler (Linux / macOS)
+      - name: Install Rust (Linux / macOS)
         if: runner.os != 'Windows'
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
 
-      - name: Install Rust compiler (Windows GNU)
+      - name: Install Rust (Windows)
         if: runner.os == 'Windows'
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable-x86_64-pc-windows-gnu
 
-      - name: Setup MSYS2 build tools (Windows)
+      - name: Set up MSYS2 (Windows)
         if: runner.os == 'Windows'
         uses: msys2/setup-msys2@v2
         with:
@@ -62,20 +66,29 @@ jobs:
             make
             mingw-w64-x86_64-gcc
 
+      - name: Install cargo-zigbuild (Linux)
+        if: runner.os == 'Linux'
+        run: pip3 install cargo-zigbuild ziglang
+
       - name: Build rival3-ffi (Windows)
         if: runner.os == 'Windows'
         shell: msys2 {0}
         run: cargo build --release --manifest-path=rival3-ffi/Cargo.toml
 
-      - name: Build rival3-ffi (Linux / macOS)
-        if: runner.os != 'Windows'
+      # Uses cargo-zigbuild for glibc
+      - name: Build rival3-ffi (Linux)
+        if: runner.os == 'Linux'
+        run: cargo zigbuild --release --manifest-path=rival3-ffi/Cargo.toml --target x86_64-unknown-linux-gnu.2.17
+
+      - name: Build rival3-ffi (macOS)
+        if: runner.os == 'macOS'
         run: cargo build --release --manifest-path=rival3-ffi/Cargo.toml
 
       - name: Upload native library
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: rival3-ffi/target/release/${{ matrix.lib_name }}
+          path: ${{ matrix.lib_dir }}/${{ matrix.lib_name }}
           if-no-files-found: error
 
   assemble-fat-package:
