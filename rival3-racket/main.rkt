@@ -67,8 +67,9 @@
 (define *rival-profile-executions* (make-parameter 1000))
 
 (define-runtime-path native-root (build-path "private" "native"))
-(define-runtime-path dev-native-root
-  (build-path ".." "rival3-ffi" "target" "release"))
+;; Dev fallback for local builds of Rival 3
+(define dev-native-root
+  (build-path native-root ".." ".." ".." "rival3-ffi" "target" "release"))
 
 (define _lib-name
   (string-append (case (system-type)
