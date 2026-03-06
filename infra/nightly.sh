@@ -13,7 +13,7 @@ function clean {
 
 clean
 rustup update
-make build
+make install
 xz -d -k -f infra/points.json.xz
 racket -y infra/time.rkt --dir "$REPORTDIR" --profile profile.json infra/points.json
 python3 infra/ratio_plot.py -t "$REPORTDIR"/timeline.json -o "$REPORTDIR"
