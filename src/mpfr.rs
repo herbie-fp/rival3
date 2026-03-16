@@ -159,11 +159,11 @@ pub fn mpfr_ceil(input: &Float, out: &mut Float, _rnd: Round) -> bool {
 }
 
 pub fn mpfr_round_inplace(x: &mut Float) -> bool {
-    unsafe { mpfr::round(x.as_raw_mut(), x.as_raw()) == 0 }
+    unsafe { mpfr::rint(x.as_raw_mut(), x.as_raw(), to_mpfr_round(Round::Nearest)) == 0 }
 }
 
 pub fn mpfr_round(input: &Float, out: &mut Float, _rnd: Round) -> bool {
-    unsafe { mpfr::round(out.as_raw_mut(), input.as_raw()) == 0 }
+    unsafe { mpfr::rint(out.as_raw_mut(), input.as_raw(), to_mpfr_round(Round::Nearest)) == 0 }
 }
 
 pub fn mpfr_trunc(input: &Float, out: &mut Float, _rnd: Round) -> bool {
