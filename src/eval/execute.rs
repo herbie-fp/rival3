@@ -32,8 +32,12 @@ pub fn evaluate_instruction(instruction: &Instruction, registers: &mut [Ival], p
             out_reg.set_prec(precision.max(val.prec()));
             out_reg.lo.as_float_mut().assign_round(val, Round::Down);
             out_reg.hi.as_float_mut().assign_round(val, Round::Up);
-            out_reg.err = ErrorFlags::none();
-            let exact = out_reg.lo.as_float() == out_reg.hi.as_float();
+            out_reg.err = if val.is_finite() {
+                ErrorFlags::none()
+            } else {
+                ErrorFlags::error()
+            };
+            let exact = val.is_nan() || out_reg.lo.as_float() == out_reg.hi.as_float();
             out_reg.lo.immovable = exact;
             out_reg.hi.immovable = exact;
         }
