@@ -165,7 +165,7 @@ can be evaluated at specific input points using @racket[rival-apply].
     [hints (or/c rival-hints? #f) #f])
   (vectorof T)]{
 Evaluates the compiled real expression on an input point represented
-as a vector of bigfloats. @racket[point] must be the same length as
+as a vector of bigfloats and booleans. @racket[point] must be the same length as
 the list @racket[vars] passed to @racket[rival-compile]. The output
 is a vector of output values of the same length as the @racket[exprs]
 passed to @racket[rival-compile]. Moreover, the output values are

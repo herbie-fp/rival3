@@ -50,6 +50,11 @@
 (define (bf->bool x)
   (and (not (bfzero? x)) #t))
 
+(define (input->bf x)
+  (if (boolean? x)
+      (bf (if x 1 0))
+      x))
+
 (define (exactly-representable-at-current-bf-precision? x)
   (define lo
     (parameterize ([bf-rounding-mode 'down])
@@ -472,8 +477,8 @@
   (define arg-ptrs (machine-wrapper-arg-buf machine))
   (when (> n-args 0)
     (for ([i (in-range n-args)]
-          [bf (in-vector pt)])
-      (ptr-set! arg-ptrs _mpfr-pointer i bf)))
+          [arg (in-vector pt)])
+      (ptr-set! arg-ptrs _mpfr-pointer i (input->bf arg))))
   (define n-outs (machine-wrapper-n-exprs machine))
   (define out-bfs (machine-wrapper-out-bfs machine))
   (define out-ptrs (machine-wrapper-out-buf machine))
@@ -512,8 +517,8 @@
   (define rect-ptrs (machine-wrapper-rect-buf machine))
   (for ([i (in-range n-args)]
         [iv (in-vector rect)])
-    (ptr-set! rect-ptrs _mpfr-pointer (* 2 i) (ival-lo iv))
-    (ptr-set! rect-ptrs _mpfr-pointer (+ (* 2 i) 1) (ival-hi iv)))
+    (ptr-set! rect-ptrs _mpfr-pointer (* 2 i) (input->bf (ival-lo iv)))
+    (ptr-set! rect-ptrs _mpfr-pointer (+ (* 2 i) 1) (input->bf (ival-hi iv))))
   (define hint-ptr (and hint (hints-wrapper-ptr hint)))
   (match-define (list status-code is-error maybe-error converged hints-ptr)
     (ffi-fn (machine-wrapper-ptr machine) rect-ptrs n-args hint-ptr))
