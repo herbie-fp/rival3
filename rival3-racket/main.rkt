@@ -337,11 +337,12 @@
          (rival_expr_bigint arena (number->string expr))
          (rival_expr_bigrational arena (number->string expr) "1"))]
     [(? rational?)
+     (define exact-val (inexact->exact expr))
      (if (integer? expr)
-         (rival_expr_bigint arena (number->string (inexact->exact expr)))
+         (rival_expr_bigint arena (number->string exact-val))
          (rival_expr_bigrational arena
-                                 (number->string (numerator expr))
-                                 (number->string (denominator expr))))]
+                                 (number->string (numerator exact-val))
+                                 (number->string (denominator exact-val))))]
     [(? real?) (rival_expr_f64 arena (exact->inexact expr))]
     [`(- ,x) (rival_expr_neg arena (expr->ffi arena x))]
     [`((sinu ,n) ,x) (rival_expr_sinu arena n (expr->ffi arena x))]
