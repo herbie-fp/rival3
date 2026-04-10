@@ -246,6 +246,21 @@
   (memcpy b ptr len)
   b)
 
+(define (malloc-c-string str)
+  (define bs (string->bytes/utf-8 str))
+  (define n (bytes-length bs))
+  (define ptr (malloc _byte (+ n 1) 'raw))
+  (for ([i (in-range n)])
+    (ptr-set! ptr _byte i (bytes-ref bs i)))
+  (ptr-set! ptr _byte n 0)
+  ptr)
+
+(define (free-c-string-array arr n)
+  (for ([i (in-range n)])
+    (define ptr (ptr-ref arr _pointer i))
+    (when ptr (free-ptr ptr)))
+  (free-ptr arr))
+
 ;; Fold a list of args using a binary FFI function
 (define (fold-binary-ffi arena binary-fn args)
   (foldl (lambda (arg acc) (binary-fn arena acc (expr->ffi arena arg)))
@@ -403,7 +418,7 @@
   (define vars-arr (malloc _pointer n-vars 'raw))
   (for ([i (in-naturals)]
         [var (in-list vars)])
-    (ptr-set! vars-arr _pointer i (cast (symbol->string var) _string _pointer)))
+    (ptr-set! vars-arr _pointer i (malloc-c-string (symbol->string var))))
 
   (define disc-ptr (discs->ffi discs))
 
@@ -418,7 +433,7 @@
                        (*rival-profile-executions*)))
 
   (free-ptr exprs-arr)
-  (free-ptr vars-arr)
+  (free-c-string-array vars-arr n-vars)
   (rival_disc_free disc-ptr)
   (rival_expr_arena_free arena)
 
