@@ -1,0 +1,64 @@
+name: Refresh Herbie points
+
+on:
+  workflow_dispatch:
+    inputs:
+      herbie:
+        description: Herbie ref to sample
+        default: rival-no-profiling
+        # default: main
+      seed:
+        description: Random seed (default is today's date as YYYYDDD)
+        default: ""
+
+jobs:
+  points:
+    name: Sample Herbie benchmarks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      SEED: ${{ inputs.seed }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/checkout@v5
+        with:
+          repository: herbie-fp/herbie
+          ref: ${{ inputs.herbie }}
+          path: herbie
+
+      - name: Install Racket
+        uses: Bogdanp/setup-racket@v1.14
+        with:
+          version: 8.18
+          architecture: x64
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Install Herbie
+        run: |
+          set -eux
+          sudo apt-get install -y libmpfr6 libmpfr-dev
+          make -C herbie install
+
+      - name: Sample every benchmark
+        run: |
+          set -eux
+          echo "SEED=${SEED:-$(date +%Y%j)}" >> "$GITHUB_ENV"
+          racket -y herbie/infra/rival-dump.rkt --seed "${SEED:-$(date +%Y%j)}" --timeout 600 herbie/bench
+          tar cJf dump-rival.tar.xz dump-rival
+
+      - name: Publish snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eux
+          gh release delete points --yes --cleanup-tag || true
+          gh release create points dump-rival.tar.xz \
+            --title "Herbie points" \
+            --notes "herbie ${{ inputs.herbie }} at $(git -C herbie rev-parse HEAD), seed $SEED"
