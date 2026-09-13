@@ -5,7 +5,9 @@
          math/flonum
          math/bigfloat
          racket/random
-         profile)
+         profile
+         ffi/unsafe
+         (only-in math/private/bigfloat/mpfr get-mpfr-fun _mpfr-pointer _rnd_t))
 (require json)
 
 (require rival3
@@ -20,16 +22,46 @@
 (define *baseline-timeout* (make-parameter 0))
 (define *sollya-timeout* (make-parameter 0))
 
-(define (read-from-string s)
-  (read (open-input-string s)))
+(define mpfr-get-flt (get-mpfr-fun 'mpfr_get_flt (_fun _mpfr-pointer _rnd_t -> _float)))
+
+(define (bigfloat->float32 x)
+  (mpfr-get-flt x (bf-rounding-mode)))
+
+(define (representation-bits repr)
+  (match repr
+    ['binary64 64]
+    ['binary32 32]))
+
+(define (make-discretization repr target)
+  (match repr
+    ['binary64 (discretization 'f64 target bigfloat->flonum)]
+    ['binary32 (discretization 'f32 target bigfloat->float32)]
+    ['bool (struct-copy discretization boolean-discretization [target target])]))
+
+(define (read-points forms)
+  (match forms
+    ['() '()]
+    [(list* (list 'eval 'f pt ...) (list 'answer status exs ...) rest)
+     (cons (list pt status exs) (read-points rest))]
+    [(list* (list 'eval 'f pt ...) rest) (cons (list pt #f '()) (read-points rest))]))
+
+(define (read-trace file)
+  (match (file->list file)
+    [(list (list 'precision reprs ...) (list 'define (list 'f vars ...) exprs ...) evals ...)
+     (define target (apply max (map representation-bits reprs)))
+     (define discs (map (curryr make-discretization target) (cons 'bool reprs)))
+     (hash 'vars vars 'exprs exprs 'discs discs 'points (read-points evals))]))
+
+(define (trace-files dir)
+  (define (index file)
+    (string->number (path->string (path-replace-extension (file-name-from-path file) #""))))
+  (define files (filter (curryr path-has-extension? #".rival") (directory-list dir #:build? #t)))
+  (sort files < #:key index))
 
 (define (time-expr rec timeline sollya-reeval)
-  (define exprs (map read-from-string (hash-ref rec 'exprs)))
-  (define vars (map read-from-string (hash-ref rec 'vars)))
-  (unless (andmap symbol? vars)
-    (raise 'time "Invalid variable list ~a" vars))
-  (match-define `(bool flonum ...) (map read-from-string (hash-ref rec 'discs)))
-  (define discs (cons boolean-discretization (map (const flonum-discretization) (cdr exprs))))
+  (define exprs (hash-ref rec 'exprs))
+  (define vars (hash-ref rec 'vars))
+  (define discs (hash-ref rec 'discs))
 
   ; Rival machine
   (define start-compile (current-inexact-milliseconds))
@@ -44,22 +76,25 @@
       (baseline-compile exprs vars discs)))
 
   (define sollya-machine
-    (match (or (equal? (cdr exprs) `((* (fmod (exp x) (sqrt (cos x))) (exp (neg x))))) ; id 65
-               (equal? (cdr exprs) `((* (exp (neg w)) (pow l (exp w)))))) ; id 68
-      [#t
-       (printf "Sollya didn't compile due to the bugs in evaluation of:\n\t~a\n" exprs)
-       #f]
-      [#f
-       (with-handlers ([exn:fail? (λ (e)
-                                    (printf "Sollya didn't compile")
-                                    (printf "~a\n" e)
-                                    #f)])
-         (sollya-compile exprs vars 53))])) ; prec=53 is an imitation of flonum
+    (and sollya-reeval
+         (match (or (equal? (cdr exprs) `((* (fmod (exp x) (sqrt (cos x))) (exp (neg x))))) ; id 65
+                    (equal? (cdr exprs) `((* (exp (neg w)) (pow l (exp w)))))) ; id 68
+           [#t
+            (printf "Sollya didn't compile due to the bugs in evaluation of:\n\t~a\n" exprs)
+            #f]
+           [#f
+            (with-handlers ([exn:fail? (λ (e)
+                                         (printf "Sollya didn't compile")
+                                         (printf "~a\n" e)
+                                         #f)])
+              (sollya-compile exprs vars 53))]))) ; prec=53 is an imitation of flonum
 
   (define tuned-bench #f)
-  (define times
-    (for/list ([pt* (in-list (hash-ref rec 'points))])
-      (match-define (list pt sollya-exs sollya-status sollya-apply-time) pt*)
+  (define-values (times mismatches)
+    (for/fold ([times '()]
+               [mismatches 0])
+              ([pt* (in-list (hash-ref rec 'points))])
+      (match-define (list pt expected-status expected-exs) pt*)
       ; --------------------------- Baseline execution ----------------------------------------------
       (define baseline-start-apply (current-inexact-milliseconds))
       (match-define (list baseline-status baseline-exs)
@@ -154,47 +189,25 @@
           (timeline-push! timeline 'instr-executed-cnt (list 'rival-no-repeats n ivec-len))))
 
       ; --------------------------- Sollya execution ------------------------------------------------
+      (define-values (sollya-status sollya-exs sollya-apply-time)
+        (cond
+          [sollya-machine
+           (with-handlers ([exn:fail? (λ (e)
+                                        (printf "Sollya failed")
+                                        (printf "~a\n" e)
+                                        (sollya-kill sollya-machine)
+                                        (set! sollya-machine #f)
+                                        (values 'invalid #f 0.0))])
+             (match-define (list internal-time external-time exs status)
+               (sollya-apply sollya-machine pt #:timeout (*sampling-timeout*)))
+             (values status exs external-time))]
+          [else (values 'invalid #f 0.0)]))
+
       ; Points for expressions where Sollya has not compiled do not go to the plot/speed graphs!
       ; Also, if Rival's status is invalid - these points do not go to the graphs!
       ; We treat Rival's results as the right ones since for some benchs Sollya has produced wrong results!
-      (when (and (and rival-machine baseline-machine sollya-machine)
+      (when (and (or (not sollya-reeval) sollya-machine)
                  (or (equal? rival-status 'valid) (equal? rival-status 'unsamplable)))
-        (match sollya-reeval
-          [#t
-           (set! sollya-apply-time 0.0)
-           (match sollya-machine
-             [#f (list #f #f)] ; if sollya machine is not working for this benchmark
-             [else
-              (with-handlers ([exn:fail? (λ (e)
-                                           (printf "Sollya failed")
-                                           (printf "~a\n" e)
-                                           (sollya-kill sollya-machine)
-                                           (set! sollya-machine #f)
-                                           (list #f #f))])
-                (match-define (list internal-time external-time exs status)
-                  (sollya-apply sollya-machine pt #:timeout (*sampling-timeout*)))
-                (set! sollya-apply-time external-time)
-                (set! sollya-status status)
-                (set! sollya-exs exs))])]
-          [#f
-           (set! sollya-exs
-                 (match sollya-exs
-                   ["#f" #f]
-                   [#f #f]
-                   [_ (fl (string->number sollya-exs))]))
-
-           (set! sollya-status
-                 (match sollya-status
-                   ["#f" 'invalid]
-                   [#f 'invalid]
-                   [_ (string->symbol sollya-status)]))
-
-           (set! sollya-apply-time
-                 (match sollya-apply-time
-                   ["#f" 0.0]
-                   [#f 0.0]
-                   [_ sollya-apply-time]))])
-
         ; -------------------------------- Combining results ----------------------------------------
         ; When all the machines have compiled and produced results - write the results to outcomes
         (when (> (*sampling-timeout*) sollya-apply-time)
@@ -224,13 +237,20 @@
                  (equal? baseline-status 'valid))
             1
             0))
-      (cons rival-status (cons rival-apply-time rival-baseline-difference))))
+      (define mismatch?
+        (match* (expected-status rival-status)
+          [('valid 'valid) (not (equal? (first expected-exs) rival-exs))]
+          [('valid 'invalid) #t]
+          [('invalid 'valid) #t]
+          [(_ _) #f]))
+      (values (cons (cons rival-status (cons rival-apply-time rival-baseline-difference)) times)
+              (+ mismatches (if mismatch? 1 0)))))
 
   ; Zombie process
   (when sollya-machine
     (sollya-kill sollya-machine))
 
-  (cons (cons 'compile compile-time) times))
+  (values (cons (cons 'compile compile-time) times) mismatches))
 
 (define (time-exprs data)
   (define times
@@ -307,6 +327,7 @@
   (define total-u 0.0)
   (define count-u 0.0)
   (define total-mem-bytes 0)
+  (define total-mismatches 0)
 
   (define timeline
     (make-hash ; this hash is to be used for the plots
@@ -319,16 +340,18 @@
            (cons 'density (make-hash)))))
 
   (define table
-    (for/list ([rec (in-port read-json points)]
+    (for/list ([file (in-list (trace-files points))]
                [i (in-naturals)]
                #:break (and test-id (> i (string->number test-id)))
                #:unless (and test-id (not (equal? (~a i) test-id))))
+      (define rec (read-trace file))
       (when test-id
-        (pretty-print (map read-from-string (hash-ref rec 'exprs))))
+        (pretty-print (hash-ref rec 'exprs)))
 
       (define mem-before (current-memory-use 'cumulative))
+      (define-values (data mismatches) (time-expr rec timeline sollya-reeval))
       (match-define (list c-time v-num v-time i-num i-time u-num u-time rival-baseline-diff)
-        (time-exprs (time-expr rec timeline sollya-reeval)))
+        (time-exprs data))
       (define mem-after (current-memory-use 'cumulative))
       (define mem-delta (- mem-after mem-before))
       (define mem-mib (/ (exact->inexact mem-delta) (* 1024 1024)))
@@ -340,6 +363,7 @@
       (set! total-u (+ total-u u-time))
       (set! count-u (+ count-u u-num))
       (set! total-mem-bytes (+ total-mem-bytes mem-delta))
+      (set! total-mismatches (+ total-mismatches mismatches))
       (define t-time (+ c-time v-time i-time u-time))
       (printf "~a: ~as ~as ~as ~as ~as MiB\n"
               (~a i #:align 'left #:min-width 3)
@@ -348,12 +372,13 @@
               (~r i-time #:precision '(= 3) #:min-width 8)
               (~r u-time #:precision '(= 3) #:min-width 8)
               (~r mem-mib #:precision '(= 3) #:min-width 8))
-      (list i t-time c-time v-num v-time i-num i-time u-num u-time mem-mib rival-baseline-diff)))
+      (list i t-time c-time v-num v-time i-num i-time u-num u-time mem-mib rival-baseline-diff mismatches)))
   (printf "\nDATA:\n")
   (printf "\tNUMBER OF TUNED BENCHMARKS = ~a\n" (*num-tuned-benchmarks*))
   (printf "\tRIVAL TIMEOUTS = ~a\n" (*rival-timeout*))
   (printf "\tBASELINE TIMEOUTS = ~a\n" (*baseline-timeout*))
   (printf "\tSOLLYA TIMEOUTS = ~a\n" (*sollya-timeout*))
+  (printf "\tEXPECTED MISMATCHES = ~a\n" total-mismatches)
 
   (when timeline-port
     (write-json (timeline->jsexpr timeline) timeline-port)
@@ -451,7 +476,8 @@
             "Unable"
             ("(s)" "s")
             ("Memory" "MiB")
-            "Baseline-valid, Rival-exit"))
+            "Baseline-valid, Rival-exit"
+            "Mismatches"))
     (html-write-table html-port "Expression timing" cols)
     (for ([row (in-list expression-table)])
       (html-write-row html-port row))
@@ -503,14 +529,14 @@
     (set! profile-port (open-output-file fn #:mode 'text #:exists 'replace))]
    [("--id") ns "Run a single test" (set! n ns)]
    [("--sollya-reeval") "Reevaluate Sollya" (set! sollya-reeval #t)]
-   #:args ([points "infra/points.json"])
+   #:args ([points "dump-rival"])
    (match-define (list ex-t ex-f)
      (if profile-port
          (profile #:order 'total
                   #:delay 0.001
                   #:render (profile-json-renderer profile-port)
-                  (run n (open-input-file points) timeline-port sollya-reeval))
-         (run n (open-input-file points) timeline-port sollya-reeval)))
+                  (run n points timeline-port sollya-reeval))
+         (run n points timeline-port sollya-reeval)))
    (when dir
      (generate-html html-port profile-port ex-t ex-f dir))))
 
