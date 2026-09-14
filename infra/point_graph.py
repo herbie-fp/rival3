@@ -72,7 +72,7 @@ def plot_points_graph(outcomes):
     print("\\newcommand{\\RivalExitCnt}{" + str(rival_exit_cnt) + "\\xspace}")
     print("\\newcommand{\\BaselineExitCnt}{" + str(base_exit_cnt) + "\\xspace}")
 
-    print("\\newcommand{\\CorrecttoFaithfulSollya}{" + str(round(100*sollya_correct_cnt/(sollya_faithful_cnt+sollya_correct_cnt), 2)) + "\\xspace}")
+    # print("\\newcommand{\\CorrecttoFaithfulSollya}{" + str(round(100*sollya_correct_cnt/(sollya_faithful_cnt+sollya_correct_cnt), 2)) + "\\xspace}")
     print("\\newcommand{\\SollyaFaithfulCnt}{" + str(sollya_faithful_cnt) + "\\xspace}")
     print("\\newcommand{\\SamplingInfiniteDifference}{" + str(infinite_difference) + "\\xspace}")
     print("\\newcommand{\\RivalZeros}{" + str(int(data[0][0])) + "\\xspace}")

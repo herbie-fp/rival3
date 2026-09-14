@@ -487,7 +487,7 @@
 
   (when expression-table
     (html-add-plot html-port "ratio_plot_iter.png" #:width 400 #:height 250)
-    (html-add-plot html-port "ratio_plot_precision.png" #:width 400 #:height 250)
+    ; (html-add-plot html-port "ratio_plot_precision.png" #:width 400 #:height 250)
     (html-add-plot html-port "ratio_plot_precision_base_norm.png" #:width 400 #:height 250)
     (html-add-plot html-port "point_graph.png" #:width 400 #:height 350)
     (html-add-plot html-port "cnt_per_iters_plot.png" #:width 400 #:height 300)
@@ -565,26 +565,27 @@
      (cond
        ; Every tool have succeded
        ; These points will go into speed graph
-       [(and (equal? 'valid sollya-status)
+       [(and ; (equal? 'valid sollya-status)
              (equal? 'valid baseline-status)
              (equal? rival-status 'valid)
-             (> (*sampling-timeout*) sollya-time)
+             ; (> (*sampling-timeout*) sollya-time)
              (> (*sampling-timeout*) rival-time)
              (> (*sampling-timeout*) baseline-time))
-        (timeline-push! timeline
-                        'outcomes
-                        (list "valid-sollya" rival-iter baseline-precision sollya-time))
+        ; (timeline-push! timeline
+        ;                 'outcomes
+        ;                 (list "valid-sollya" rival-iter baseline-precision sollya-time))
         (timeline-push! timeline
                         'outcomes
                         (list "valid-baseline" rival-iter baseline-precision baseline-time))
         (timeline-push! timeline
                         'outcomes
                         (list "valid-rival" rival-iter baseline-precision rival-time))
-        (if (or (fl= rival-exs sollya-exs)
-                (and (fl= rival-exs (fl 0.0)) (fl= sollya-exs (fl -0.0)))
-                (and (fl= rival-exs (fl -0.0)) (fl= sollya-exs (fl 0.0))))
-            (timeline-push! timeline 'outcomes (list "sollya-correct-rounding" 0 0 0))
-            (timeline-push! timeline 'outcomes (list "sollya-faithful-rounding" 0 0 0)))]
+        ; (if (or (fl= rival-exs sollya-exs)
+        ;         (and (fl= rival-exs (fl 0.0)) (fl= sollya-exs (fl -0.0)))
+        ;         (and (fl= rival-exs (fl -0.0)) (fl= sollya-exs (fl 0.0))))
+        ;     (timeline-push! timeline 'outcomes (list "sollya-correct-rounding" 0 0 0))
+        ;     (timeline-push! timeline 'outcomes (list "sollya-faithful-rounding" 0 0 0)))
+        ]
 
        ; Baseline and Rival have succeeded
        [(and (equal? 'valid baseline-status) (equal? rival-status 'valid))
