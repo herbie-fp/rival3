@@ -2,7 +2,6 @@
 set -e -x
 
 REPORTDIR="report"
-POINTS="https://github.com/herbie-fp/rival3/releases/download/points/dump-rival.tar.xz"
 export PATH=~/.cargo/bin:$PATH
 
 function clean {
@@ -16,7 +15,7 @@ clean
 rustup update
 make install
 rm -rf dump-rival
-curl -fsSL "$POINTS" | tar xJ
+tar xJf infra/points.tar.xz
 racket -y infra/time.rkt --dir "$REPORTDIR" --profile profile.json dump-rival
 python3 infra/ratio_plot.py -t "$REPORTDIR"/timeline.json -o "$REPORTDIR"
 python3 infra/point_graph.py -t "$REPORTDIR"/timeline.json -o "$REPORTDIR"
