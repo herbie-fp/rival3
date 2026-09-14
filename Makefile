@@ -2,7 +2,7 @@ PKG_DIR := rival3-racket
 PKG_NAME := rival3
 FFI_MANIFEST := rival3-ffi/Cargo.toml
 
-PLATFORM := $(shell racket -e "(display (path->string (system-library-subpath \#f)))" | tr '\\\\' '/')
+PLATFORM := $(shell racket -e "(display (path->string (system-library-subpath false)))" | tr '\\\\' '/')
 LIB_NAME := $(shell racket -e "(display (string-append (if (eq? (system-type) 'windows) \"rival3_ffi\" \"librival3_ffi\") (bytes->string/utf-8 (system-type 'so-suffix))))")
 
 FFI_BUILD := rival3-ffi/target/release/$(LIB_NAME)
