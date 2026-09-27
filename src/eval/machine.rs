@@ -297,6 +297,12 @@ impl<D: Discretization> Machine<D> {
         self.disc.target().max(self.min_precision)
     }
 
+    /// Return the discretization that outputs are rounded to.
+    #[inline]
+    pub fn discretization(&self) -> &D {
+        &self.disc
+    }
+
     /// Set the maximum working precision in bits.
     #[inline]
     pub fn set_max_precision(&mut self, bits: u32) {

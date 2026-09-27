@@ -193,10 +193,38 @@ the same behavior for a baseline machine. Use
 when analysis must use this policy too.
 }
 
+@defproc[
+  (rival-apply/f64
+    [machine rival-machine?]
+    [point (vectorof (or/c flonum? boolean?))]
+    [hints (or/c rival-hints? #f) #f])
+  (vectorof (or/c flonum? boolean?))]{
+Like @racket[rival-apply], but the point is a vector of flonums and booleans,
+and each output is a flonum for an @racket['f64] or @racket['f32]
+discretization and a boolean for a @racket['bool] discretization. A flonum
+argument is loaded exactly; infinities and NaN are invalid inputs, as their
+bigfloat counterparts are. Rival rounds each output to nearest in its
+discretization's type and never calls the discretization's @racket[convert].
+Where @racket[convert] also rounds to nearest, as in
+@racket[flonum-discretization] and @racket[boolean-discretization],
+@racket[rival-apply/f64] returns the same values and raises the same
+exceptions as @racket[rival-apply] given the same point as bigfloats.
+}
+
+@defproc[
+  (rival-apply/f64/partial
+    [machine rival-machine?]
+    [point (vectorof (or/c flonum? boolean?))]
+    [hints (or/c rival-hints? #f) #f])
+  (vectorof (or/c flonum? boolean? 'invalid))]{
+Like @racket[rival-apply/partial], over the flonum inputs and outputs of
+@racket[rival-apply/f64].
+}
+
 @deftogether[(
   @defstruct*[(exn:rival exn:fail) ()]
-  @defstruct*[(exn:rival:invalid exn:rival) ([pt (vectorof (or/c bigfloat? boolean?))])]
-  @defstruct*[(exn:rival:unsamplable exn:rival) ([pt (vectorof (or/c bigfloat? boolean?))])]
+  @defstruct*[(exn:rival:invalid exn:rival) ([pt (vectorof (or/c bigfloat? flonum? boolean?))])]
+  @defstruct*[(exn:rival:unsamplable exn:rival) ([pt (vectorof (or/c bigfloat? flonum? boolean?))])]
 )]{}
 
 Note that @racket[rival-apply] will only return a result if it can prove

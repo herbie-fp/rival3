@@ -279,6 +279,15 @@ RivalError rival_apply(struct RivalMachine *machine,
                        uintptr_t max_iterations,
                        bool require_all_outputs);
 
+RivalError rival_apply_f64(struct RivalMachine *machine,
+                           const double *args,
+                           uintptr_t n_args,
+                           double *out,
+                           uintptr_t n_out,
+                           const struct RivalHints *hints,
+                           uintptr_t max_iterations,
+                           bool require_all_outputs);
+
 RivalError rival_apply_baseline(struct RivalMachine *machine,
                                 const mpfr_t *const *args,
                                 uintptr_t n_args,

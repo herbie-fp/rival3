@@ -5,11 +5,14 @@ use crate::hints::RivalHints;
 use crate::profile::{ProfileCache, RivalExecution, RivalProfileSummary};
 use gmp_mpfr_sys::mpfr::{self, mpfr_t};
 use rival::{
-    ErrorFlags, Hint, Ival, Machine, MachineBuilder, OutputPolicy, RivalError as CoreError,
+    Discretization, ErrorFlags, Hint, Ival, Machine, MachineBuilder, OutputPolicy,
+    RivalError as CoreError,
 };
-use rug::Float;
+use rug::{Assign, Float};
 use std::ptr;
 use std::slice;
+
+const F64_PRECISION: u32 = 53;
 
 pub struct RivalMachine {
     pub(crate) machine: Machine<RivalDiscretization>,
@@ -112,6 +115,25 @@ unsafe fn marshal_point_args(
 }
 
 #[inline]
+unsafe fn marshal_f64_args(args: *const f64, n_args: usize, buf: &mut [Ival]) {
+    let xs = unsafe { slice::from_raw_parts(args, n_args) };
+    for (ival, &x) in buf.iter_mut().zip(xs) {
+        if ival.prec() != F64_PRECISION {
+            ival.set_prec(F64_PRECISION);
+        }
+        ival.lo_mut().assign(x);
+        ival.hi_mut().assign(x);
+        ival.set_immovable(true, true);
+        let err = if x.is_finite() {
+            ErrorFlags::none()
+        } else {
+            ErrorFlags::error()
+        };
+        ival.set_error_flags(err);
+    }
+}
+
+#[inline]
 unsafe fn marshal_rect_args(
     rect: *const *const mpfr_t,
     n_args: usize,
@@ -189,33 +211,46 @@ unsafe fn write_outputs(
 }
 
 #[inline]
-unsafe fn apply_inner(
-    wrapper: &mut RivalMachine,
-    args: *const *const mpfr_t,
-    n_args: usize,
-    out: *const *mut mpfr_t,
+unsafe fn write_f64_outputs(
+    outputs: &[Ival],
+    disc: &RivalDiscretization,
+    out: *mut f64,
     n_out: usize,
+) -> Result<(), RivalError> {
+    if outputs.len() != n_out {
+        return Err(RivalError::InvalidInput);
+    }
+    if n_out == 0 {
+        return Ok(());
+    }
+    let outs = unsafe { slice::from_raw_parts_mut(out, n_out) };
+    for (i, (slot, val)) in outs.iter_mut().zip(outputs).enumerate() {
+        *slot = if val.error_flags().total() {
+            f64::NAN
+        } else {
+            disc.convert(i, val.lo()).to_f64()
+        };
+    }
+    Ok(())
+}
+
+#[inline]
+unsafe fn check_hints(wrapper: &RivalMachine, hints: *const RivalHints) -> Result<(), RivalError> {
+    if !hints.is_null() && unsafe { (*hints).hints.len() } != wrapper.machine.instruction_count() {
+        return Err(RivalError::InvalidInput);
+    }
+    Ok(())
+}
+
+#[inline]
+unsafe fn run(
+    wrapper: &mut RivalMachine,
     hints: *const RivalHints,
     // Selects adaptive (`Some`) or baseline (`None`) evaluation.
     max_iterations: Option<usize>,
     require_all_outputs: bool,
-) -> RivalError {
-    if n_args != wrapper.n_vars || n_out != wrapper.n_exprs {
-        return RivalError::InvalidInput;
-    }
-
-    if !hints.is_null() && unsafe { (*hints).hints.len() } != wrapper.machine.instruction_count() {
-        return RivalError::InvalidInput;
-    }
-
-    if n_args > 0 {
-        if let Err(e) = unsafe { marshal_point_args(args, n_args, &mut wrapper.arg_buf) } {
-            return e;
-        }
-    }
-
+) -> Result<Vec<Ival>, RivalError> {
     let hints_opt = unsafe { extract_hints(hints) };
-
     let policy = output_policy(require_all_outputs);
     let result = match max_iterations {
         Some(iters) => wrapper
@@ -225,15 +260,62 @@ unsafe fn apply_inner(
             .machine
             .apply_baseline(&wrapper.arg_buf, hints_opt, policy),
     };
+    result.map_err(|e| match e {
+        CoreError::InvalidInput => RivalError::InvalidInput,
+        CoreError::Unsamplable => RivalError::Unsamplable,
+    })
+}
 
+#[inline]
+fn result_code(result: Result<(), RivalError>) -> RivalError {
     match result {
-        Ok(outputs) => match unsafe { write_outputs(&outputs, out, n_out) } {
-            Ok(()) => RivalError::Ok,
-            Err(e) => e,
-        },
-        Err(CoreError::InvalidInput) => RivalError::InvalidInput,
-        Err(CoreError::Unsamplable) => RivalError::Unsamplable,
+        Ok(()) => RivalError::Ok,
+        Err(e) => e,
     }
+}
+
+#[inline]
+unsafe fn apply_inner(
+    wrapper: &mut RivalMachine,
+    args: *const *const mpfr_t,
+    n_args: usize,
+    out: *const *mut mpfr_t,
+    n_out: usize,
+    hints: *const RivalHints,
+    max_iterations: Option<usize>,
+    require_all_outputs: bool,
+) -> Result<(), RivalError> {
+    if n_args != wrapper.n_vars || n_out != wrapper.n_exprs {
+        return Err(RivalError::InvalidInput);
+    }
+    unsafe { check_hints(wrapper, hints)? };
+    if n_args > 0 {
+        unsafe { marshal_point_args(args, n_args, &mut wrapper.arg_buf)? };
+    }
+    let outputs = unsafe { run(wrapper, hints, max_iterations, require_all_outputs)? };
+    unsafe { write_outputs(&outputs, out, n_out) }
+}
+
+#[inline]
+unsafe fn apply_f64_inner(
+    wrapper: &mut RivalMachine,
+    args: *const f64,
+    n_args: usize,
+    out: *mut f64,
+    n_out: usize,
+    hints: *const RivalHints,
+    max_iterations: usize,
+    require_all_outputs: bool,
+) -> Result<(), RivalError> {
+    if n_args != wrapper.n_vars || n_out != wrapper.n_exprs {
+        return Err(RivalError::InvalidInput);
+    }
+    unsafe { check_hints(wrapper, hints)? };
+    if n_args > 0 {
+        unsafe { marshal_f64_args(args, n_args, &mut wrapper.arg_buf) };
+    }
+    let outputs = unsafe { run(wrapper, hints, Some(max_iterations), require_all_outputs)? };
+    unsafe { write_f64_outputs(&outputs, wrapper.machine.discretization(), out, n_out) }
 }
 
 #[inline]
@@ -249,7 +331,7 @@ unsafe fn analyze_inner(
         return invalid_analyze_result();
     }
 
-    if !hints.is_null() && unsafe { (*hints).hints.len() } != wrapper.machine.instruction_count() {
+    if unsafe { check_hints(wrapper, hints) }.is_err() {
         return invalid_analyze_result();
     }
 
@@ -389,7 +471,7 @@ pub unsafe extern "C" fn rival_apply(
     }
 
     let wrapper = unsafe { &mut *machine };
-    unsafe {
+    result_code(unsafe {
         apply_inner(
             wrapper,
             args,
@@ -400,7 +482,37 @@ pub unsafe extern "C" fn rival_apply(
             Some(max_iterations),
             require_all_outputs,
         )
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rival_apply_f64(
+    machine: *mut RivalMachine,
+    args: *const f64,
+    n_args: usize,
+    out: *mut f64,
+    n_out: usize,
+    hints: *const RivalHints,
+    max_iterations: usize,
+    require_all_outputs: bool,
+) -> RivalError {
+    if machine.is_null() || (out.is_null() && n_out > 0) || (args.is_null() && n_args > 0) {
+        return RivalError::InvalidInput;
     }
+
+    let wrapper = unsafe { &mut *machine };
+    result_code(unsafe {
+        apply_f64_inner(
+            wrapper,
+            args,
+            n_args,
+            out,
+            n_out,
+            hints,
+            max_iterations,
+            require_all_outputs,
+        )
+    })
 }
 
 #[unsafe(no_mangle)]
@@ -418,7 +530,7 @@ pub unsafe extern "C" fn rival_apply_baseline(
     }
 
     let wrapper = unsafe { &mut *machine };
-    unsafe {
+    result_code(unsafe {
         apply_inner(
             wrapper,
             args,
@@ -429,7 +541,7 @@ pub unsafe extern "C" fn rival_apply_baseline(
             None,
             require_all_outputs,
         )
-    }
+    })
 }
 
 #[unsafe(no_mangle)]
