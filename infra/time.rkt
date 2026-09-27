@@ -41,13 +41,13 @@
 (define (read-points forms)
   (match forms
     ['() '()]
-    [(list* (list 'eval 'f pt ...) (list 'answer status exs ...) rest)
+    [(list* (list 'eval 'f pt ...) (list 'check-answer status exs ...) rest)
      (cons (list pt status exs) (read-points rest))]
     [(list* (list 'eval 'f pt ...) rest) (cons (list pt #f '()) (read-points rest))]))
 
 (define (read-trace file)
   (match (file->list file)
-    [(list (list 'precision reprs ...) (list 'define (list 'f vars ...) exprs ...) evals ...)
+    [(list (list 'set-precision reprs ...) (list 'define (list 'f vars ...) exprs ...) evals ...)
      (define target (apply max (map representation-bits reprs)))
      (define discs (map (curryr make-discretization target) (cons 'bool reprs)))
      (hash 'vars vars 'exprs exprs 'discs discs 'points (read-points evals))]))
