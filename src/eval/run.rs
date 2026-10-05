@@ -4,7 +4,7 @@ use itertools::{enumerate, izip};
 
 use crate::eval::{
     execute,
-    machine::{Discretization, Hint, Machine},
+    machine::{Discretization, Hint, Machine, Strategy},
     profile::Execution,
 };
 use crate::interval::Ival;
@@ -33,7 +33,9 @@ impl<D: Discretization> Machine<D> {
     /// Pass `None` for default behavior.
     ///
     /// `max_iterations` sets the maximum number of re-evaluation
-    /// iterations before giving up.
+    /// iterations before giving up. A [`Strategy::Baseline`] machine
+    /// ignores it and gives up once the precision would exceed
+    /// [`Machine::max_precision`].
     ///
     /// # Errors
     ///
@@ -61,8 +63,20 @@ impl<D: Discretization> Machine<D> {
             &hint_storage
         };
 
+        match self.strategy {
+            Strategy::Adaptive => self.apply_adaptive(hint_slice, max_iterations, policy),
+            Strategy::Baseline => self.apply_baseline(hint_slice, policy),
+        }
+    }
+
+    fn apply_adaptive(
+        &mut self,
+        hints: &[Hint],
+        max_iterations: usize,
+        policy: OutputPolicy,
+    ) -> Result<Vec<Ival>, RivalError> {
         for iteration in 0..max_iterations {
-            if let Some(results) = self.run_iteration(iteration, hint_slice, policy)? {
+            if let Some(results) = self.run_iteration(iteration, hints, policy)? {
                 return Ok(results);
             }
         }
@@ -70,39 +84,18 @@ impl<D: Discretization> Machine<D> {
         Err(RivalError::Unsamplable)
     }
 
-    /// Evaluate the machine using the baseline strategy.
-    ///
-    /// The baseline strategy uses a single global precision for all
-    /// instructions, doubling it each iteration. This is simpler but
-    /// less efficient than [`Machine::apply`], which uses adaptive
-    /// per-instruction precision tuning.
-    ///
-    /// Call [`Machine::configure_baseline`] before using this method
-    /// to set up the machine for baseline evaluation.
-    pub fn apply_baseline(
+    fn apply_baseline(
         &mut self,
-        args: &[Ival],
-        hint: Option<&[Hint]>,
+        hints: &[Hint],
         policy: OutputPolicy,
     ) -> Result<Vec<Ival>, RivalError> {
-        self.load_arguments(args);
-
-        let hint_storage;
-        let hint_slice: &[Hint] = if let Some(h) = hint {
-            h
-        } else {
-            hint_storage = self.default_hint.clone();
-            &hint_storage
-        };
-
-        let start_prec = self.disc.target().saturating_add(10);
-        let mut prec = start_prec;
+        let mut prec = self.disc.target().saturating_add(10);
         let mut iter: usize = 0;
 
         loop {
             self.iteration = iter;
             self.baseline_adjust(prec);
-            self.run_with_hint(hint_slice);
+            self.run_with_hint(hints);
 
             match self.collect_outputs(policy)? {
                 Some(outputs) => return Ok(outputs),
@@ -116,47 +109,6 @@ impl<D: Discretization> Machine<D> {
                 }
             }
         }
-    }
-
-    /// Analyze an input rectangle using the baseline strategy,
-    /// returning status, next hints, and a convergence flag.
-    ///
-    /// See [`Machine::analyze_with_hints`] for details on the
-    /// return values.
-    pub fn analyze_baseline_with_hints(
-        &mut self,
-        rect: &[Ival],
-        hint: Option<&[Hint]>,
-        policy: OutputPolicy,
-    ) -> (Ival, Vec<Hint>, bool) {
-        self.load_arguments(rect);
-
-        let tmp;
-        let hint_slice = if let Some(h) = hint {
-            h
-        } else {
-            tmp = self.default_hint.clone();
-            &tmp
-        };
-
-        self.iteration = 0;
-        self.baseline_adjust(self.disc.target().saturating_add(10));
-        self.run_with_hint(hint_slice);
-
-        let (good, _done, bad, stuck) = self.return_flags(policy);
-        let (next_hint, converged) = self.make_hint(hint_slice);
-
-        let status = Ival::bool_interval(bad || stuck, (!good) || stuck);
-        (status, next_hint, converged)
-    }
-
-    /// Analyze a hyper-rectangle using the baseline strategy and
-    /// return only the boolean interval status.
-    ///
-    /// See [`Machine::analyze`] for details on the return value.
-    pub fn analyze_baseline(&mut self, rect: &[Ival], policy: OutputPolicy) -> Ival {
-        let (status, _hint, _conv) = self.analyze_baseline_with_hints(rect, None, policy);
-        status
     }
 
     /// Run a single iteration with precision tuning and hint-guided evaluation.
@@ -175,7 +127,7 @@ impl<D: Discretization> Machine<D> {
         self.collect_outputs(policy)
     }
 
-    /// Analyze an input rectangle using adaptive precision tuning.
+    /// Analyze an input rectangle.
     ///
     /// Returns a `(status, hints, converged)` tuple:
     ///
@@ -207,7 +159,12 @@ impl<D: Discretization> Machine<D> {
 
         // One analysis iteration at sampling iteration 0.
         self.iteration = 0;
-        self.adjust(hint_slice);
+        match self.strategy {
+            Strategy::Adaptive => {
+                self.adjust(hint_slice);
+            }
+            Strategy::Baseline => self.baseline_adjust(self.disc.target().saturating_add(10)),
+        }
         self.run_with_hint(hint_slice);
 
         let (good, _done, bad, stuck) = self.return_flags(policy);

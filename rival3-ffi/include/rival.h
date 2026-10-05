@@ -9,7 +9,7 @@
 #include <stdlib.h>
 #include "mpfr.h"
 
-#define RIVAL_ABI_VERSION 2
+#define RIVAL_ABI_VERSION 3
 
 #define RIVAL_EXPR_INVALID UINT32_MAX
 
@@ -154,6 +154,18 @@ enum RivalTernaryOp
 typedef uint32_t RivalTernaryOp;
 #endif // __cplusplus
 
+enum RivalStrategy
+#ifdef __cplusplus
+  : uint32_t
+#endif // __cplusplus
+ {
+    RIVAL_STRATEGY_ADAPTIVE = 0,
+    RIVAL_STRATEGY_BASELINE = 1,
+};
+#ifndef __cplusplus
+typedef uint32_t RivalStrategy;
+#endif // __cplusplus
+
 typedef struct RivalDiscretization RivalDiscretization;
 
 typedef struct RivalExprBuilder RivalExprBuilder;
@@ -253,14 +265,13 @@ void rival_hints_free(struct RivalHints *hints);
 
 uintptr_t rival_hints_len(const struct RivalHints *hints);
 
-bool rival_machine_configure_baseline(struct RivalMachine *machine);
-
 struct RivalMachine *rival_machine_new(const struct RivalExprBuilder *builder,
                                        const uint32_t *expr_handles,
                                        uintptr_t n_exprs,
                                        const struct RivalDiscretization *disc,
                                        uint32_t max_precision,
-                                       uintptr_t profile_capacity);
+                                       uintptr_t profile_capacity,
+                                       uint32_t strategy);
 
 void rival_machine_free(struct RivalMachine *machine);
 
@@ -288,25 +299,11 @@ RivalError rival_apply_f64(struct RivalMachine *machine,
                            uintptr_t max_iterations,
                            bool require_all_outputs);
 
-RivalError rival_apply_baseline(struct RivalMachine *machine,
-                                const mpfr_t *const *args,
-                                uintptr_t n_args,
-                                mpfr_t *const *out,
-                                uintptr_t n_out,
-                                const struct RivalHints *hints,
-                                bool require_all_outputs);
-
 struct RivalAnalyzeResult rival_analyze_with_hints(struct RivalMachine *machine,
                                                    const mpfr_t *const *rect,
                                                    uintptr_t n_args,
                                                    const struct RivalHints *hints,
                                                    bool require_all_outputs);
-
-struct RivalAnalyzeResult rival_analyze_baseline_with_hints(struct RivalMachine *machine,
-                                                            const mpfr_t *const *rect,
-                                                            uintptr_t n_args,
-                                                            const struct RivalHints *hints,
-                                                            bool require_all_outputs);
 
 uintptr_t rival_profiler_count(const struct RivalMachine *machine);
 

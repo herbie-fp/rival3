@@ -72,6 +72,7 @@ pub struct Machine<D: Discretization> {
     pub(crate) profiling_enabled: bool,
 
     // Configuration parameters.
+    pub(crate) strategy: Strategy,
     pub(crate) max_precision: u32,
     pub(crate) min_precision: u32,
     pub(crate) lower_bound_early_stopping: bool,
@@ -95,6 +96,17 @@ pub enum Hint {
     KnownBool(bool),
 }
 
+/// How a machine chooses the working precision of each instruction.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Strategy {
+    /// Tune each instruction's precision separately on every iteration.
+    Adaptive,
+    /// Use a single global precision for all instructions, doubling it each
+    /// iteration. This is simpler but less efficient than
+    /// [`Strategy::Adaptive`].
+    Baseline,
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct PathOutcome {
     pub hint: Hint,
@@ -106,6 +118,7 @@ pub(crate) struct PathOutcome {
 /// See the [crate documentation](crate) for an example.
 pub struct MachineBuilder<D: Discretization> {
     disc: D,
+    strategy: Strategy,
     min_precision: u32,
     max_precision: u32,
     slack_unit: i64,
@@ -119,6 +132,7 @@ impl<D: Discretization> MachineBuilder<D> {
     /// Create a builder with default precision parameters.
     ///
     /// Defaults:
+    /// - `strategy`: [`Strategy::Adaptive`]
     /// - `min_precision`: 20 bits
     /// - `max_precision`: 10,000 bits
     /// - `slack_unit`: 512
@@ -126,6 +140,7 @@ impl<D: Discretization> MachineBuilder<D> {
     pub fn new(disc: D) -> Self {
         Self {
             disc,
+            strategy: Strategy::Adaptive,
             min_precision: 20,
             max_precision: 10_000,
             slack_unit: 512,
@@ -134,6 +149,12 @@ impl<D: Discretization> MachineBuilder<D> {
             profile_capacity: 1000,
             profiling_enabled: true,
         }
+    }
+
+    /// Set the precision strategy.
+    pub fn strategy(mut self, v: Strategy) -> Self {
+        self.strategy = v;
+        self
     }
 
     /// Set the minimum working precision in bits.
@@ -195,14 +216,17 @@ impl<D: Discretization> MachineBuilder<D> {
         let instructions = program.instructions;
 
         let mut best_known_precisions = vec![0u32; instruction_count];
-        let initial_precisions = make_initial_precisions(
-            &instructions,
-            var_count,
-            &program.outputs,
-            &self.disc,
-            self.base_tuning_precision,
-            self.ampl_tuning_bits,
-        );
+        let initial_precisions = match self.strategy {
+            Strategy::Adaptive => make_initial_precisions(
+                &instructions,
+                var_count,
+                &program.outputs,
+                &self.disc,
+                self.base_tuning_precision,
+                self.ampl_tuning_bits,
+            ),
+            Strategy::Baseline => vec![self.disc.target().saturating_add(10); instruction_count],
+        };
 
         let initial_repeats = make_initial_repeats(
             &instructions,
@@ -232,6 +256,7 @@ impl<D: Discretization> MachineBuilder<D> {
             output_distance,
             iteration: 0,
             bumps: 0,
+            strategy: self.strategy,
             max_precision: self.max_precision,
             min_precision: self.min_precision,
             lower_bound_early_stopping: false,
@@ -351,27 +376,6 @@ impl<D: Discretization> Machine<D> {
             .iter()
             .map(|instr| instr.data.name_static())
             .collect()
-    }
-
-    /// Reconfigure the machine to use the baseline strategy.
-    ///
-    /// The baseline strategy uses a single global precision for all
-    /// instructions, doubling it each iteration. This is simpler but
-    /// less efficient than the default adaptive precision tuning.
-    pub fn configure_baseline(&mut self) {
-        let var_count = self.arguments.len();
-        let start_prec = self.disc.target().saturating_add(10);
-
-        self.initial_precisions.fill(start_prec);
-        self.best_known_precisions.fill(0);
-
-        self.initial_repeats = make_initial_repeats(
-            &self.instructions,
-            var_count,
-            &mut self.registers,
-            &self.initial_precisions,
-            &mut self.best_known_precisions,
-        );
     }
 
     /// Return a snapshot of recorded [`Execution`] records and reset
