@@ -116,32 +116,17 @@
 (define _rival-disc-type (_enum '(bool = 0 f32 = 1 f64 = 2) _uint32))
 
 (define RIVAL_EXPR_INVALID #xFFFFFFFF)
-(define unary-op-codes
-  '(neg = 0 fabs = 1 sqrt = 2 cbrt = 3 pow2 = 4
-        exp = 5 exp2 = 6 expm1 = 7 log = 8 log2 = 9 log10 = 10 log1p = 11 logb = 12
-        sin = 13 cos = 14 tan = 15 asin = 16 acos = 17 atan = 18
-        sinh = 19 cosh = 20 tanh = 21 asinh = 22 acosh = 23 atanh = 24
-        erf = 25 erfc = 26 lgamma = 27 tgamma = 28
-        rint = 29 round = 30 ceil = 31 floor = 32 trunc = 33
-        not = 34 assert = 35 error = 36))
-
-(define _rival-unary-op (_enum unary-op-codes _uint32))
-(define _rival-unary-param-op (_enum '(cosu = 0 sinu = 1 tanu = 2) _uint32))
-(define _rival-binary-op
-  (_enum '(add = 0 sub = 1 mul = 2 div = 3 pow = 4 hypot = 5
-               fmin = 6 fmax = 7 fdim = 8 copysign = 9 fmod = 10 remainder = 11 atan2 = 12
-               and = 13 or = 14 eq = 15 ne = 16 lt = 17 le = 18 gt = 19 ge = 20)
-         _uint32))
-(define _rival-ternary-op (_enum '(fma = 0 if = 1) _uint32))
 
 (define-rival rival_version (_fun -> _uint32))
 (define-rival rival_disc_f64 (_fun _uint32 -> _pointer))
 (define-rival rival_disc_f32 (_fun _uint32 -> _pointer))
 (define-rival rival_disc_bool (_fun -> _pointer))
-(define-rival rival_disc_mixed (_fun _pointer _size _uint32 -> _pointer))
+(define-rival rival_disc_mixed
+              (_fun (types : (_list i _rival-disc-type)) (_size = (length types)) _uint32 -> _pointer))
 (define-rival rival_disc_free (_fun _pointer -> _void))
 
-(define-rival rival_expr_builder_new (_fun _pointer _size -> _pointer))
+(define-rival rival_expr_builder_new
+              (_fun (vars : (_list i _string)) (_size = (length vars)) -> _pointer))
 (define-rival rival_expr_builder_free (_fun _pointer -> _void))
 
 (define-rival rival_expr_var (_fun _pointer _string -> _uint32))
@@ -152,13 +137,20 @@
 (define-rival rival_expr_pi (_fun _pointer -> _uint32))
 (define-rival rival_expr_e (_fun _pointer -> _uint32))
 
-(define-rival rival_expr_unary (_fun _pointer _rival-unary-op _uint32 -> _uint32))
-(define-rival rival_expr_unary_param (_fun _pointer _rival-unary-param-op _uint64 _uint32 -> _uint32))
-(define-rival rival_expr_binary (_fun _pointer _rival-binary-op _uint32 _uint32 -> _uint32))
-(define-rival rival_expr_ternary (_fun _pointer _rival-ternary-op _uint32 _uint32 _uint32 -> _uint32))
+(define-rival rival_expr_unary (_fun _pointer _uint32 _uint32 -> _uint32))
+(define-rival rival_expr_unary_param (_fun _pointer _uint32 _uint64 _uint32 -> _uint32))
+(define-rival rival_expr_binary (_fun _pointer _uint32 _uint32 _uint32 -> _uint32))
+(define-rival rival_expr_ternary (_fun _pointer _uint32 _uint32 _uint32 _uint32 -> _uint32))
 
 (define-rival rival_machine_new
-              (_fun _pointer _pointer _size _pointer _uint32 _size _rival-strategy -> _pointer))
+              (_fun _pointer
+                    (handles : (_list i _uint32))
+                    (_size = (length handles))
+                    _pointer
+                    _uint32
+                    _size
+                    _rival-strategy
+                    -> _pointer))
 (define-rival rival_machine_free (_fun _pointer -> _void))
 (define-rival rival_machine_instruction_count (_fun _pointer -> _size))
 (define-rival rival_machine_iterations (_fun _pointer -> _uint32))
@@ -189,11 +181,11 @@
   (unless (= v 3)
     (error 'rival3 "ABI version mismatch: expected 3, got ~a" v)))
 
-;; Finalizers free what a wrapper owns, so pass foreign calls the wrapper, not its
-;; pointer, and keep it reachable while reading its memory after a call.
+;; A finalizer frees the native object, so pass foreign calls the wrapper, not its
+;; pointer, and keep the wrapper reachable while reading native memory it owns.
 (struct machine-wrapper
         ([ptr #:mutable] n-vars n-exprs n-instrs discs arg-buf arg-bfs out-buf out-bfs rect-buf
-                         rect-bfs name-table f64-args f64-outs)
+                         rect-bfs name-table f64-arg-buf f64-out-buf)
   #:property prop:cpointer
   (lambda (wrapper) (machine-wrapper-ptr wrapper)))
 
@@ -221,12 +213,7 @@
   (define ptr (machine-wrapper-ptr wrapper))
   (when ptr
     (set-machine-wrapper-ptr! wrapper #f)
-    (rival_machine_free ptr)
-    (free-ptr (machine-wrapper-arg-buf wrapper))
-    (free-ptr (machine-wrapper-out-buf wrapper))
-    (free-ptr (machine-wrapper-rect-buf wrapper))
-    (free-ptr (machine-wrapper-f64-args wrapper))
-    (free-ptr (machine-wrapper-f64-outs wrapper))))
+    (rival_machine_free ptr)))
 
 (define (hints-destroy wrapper)
   (define ptr (hints-wrapper-ptr wrapper))
@@ -239,49 +226,25 @@
   (memcpy b ptr len)
   b)
 
-(define (malloc-c-string str)
-  (define bs (string->bytes/utf-8 str))
-  (define n (bytes-length bs))
-  (define ptr (malloc _byte (+ n 1) 'raw))
-  (for ([i (in-range n)])
-    (ptr-set! ptr _byte i (bytes-ref bs i)))
-  (ptr-set! ptr _byte n 0)
-  ptr)
-
-(define (free-c-string-array arr n)
-  (for ([i (in-range n)])
-    (define ptr (ptr-ref arr _pointer i))
-    (when ptr (free-ptr ptr)))
-  (free-ptr arr))
-
-;; Unary operators are named the same way in Rival expressions and in the ABI.
+;; Operator names in Rival expressions, mapped to the codes of the Rust enums in
+;; rival3-ffi/src/expr.rs.
 (define unary-ops
-  (for/seteq ([entry (in-list unary-op-codes)]
-              #:when (and (symbol? entry) (not (eq? entry '=))))
-    entry))
+  (hasheq 'neg 0 'fabs 1 'sqrt 2 'cbrt 3 'pow2 4
+          'exp 5 'exp2 6 'expm1 7 'log 8 'log2 9 'log10 10 'log1p 11 'logb 12
+          'sin 13 'cos 14 'tan 15 'asin 16 'acos 17 'atan 18
+          'sinh 19 'cosh 20 'tanh 21 'asinh 22 'acosh 23 'atanh 24
+          'erf 25 'erfc 26 'lgamma 27 'tgamma 28
+          'rint 29 'round 30 'ceil 31 'floor 32 'trunc 33
+          'not 34 'assert 35 'error 36))
+
+(define unary-param-ops (hasheq 'cosu 0 'sinu 1 'tanu 2))
 
 (define binary-ops
-  (hasheq '+ 'add
-          '- 'sub
-          '* 'mul
-          '/ 'div
-          'pow 'pow
-          'hypot 'hypot
-          'fmin 'fmin
-          'fmax 'fmax
-          'fdim 'fdim
-          'copysign 'copysign
-          'fmod 'fmod
-          'remainder 'remainder
-          'atan2 'atan2
-          'and 'and
-          'or 'or
-          '== 'eq
-          '!= 'ne
-          '< 'lt
-          '<= 'le
-          '> 'gt
-          '>= 'ge))
+  (hasheq '+ 0 '- 1 '* 2 '/ 3 'pow 4 'hypot 5
+          'fmin 6 'fmax 7 'fdim 8 'copysign 9 'fmod 10 'remainder 11 'atan2 12
+          'and 13 'or 14 '== 15 '!= 16 '< 17 '<= 18 '> 19 '>= 20))
+
+(define ternary-ops (hasheq 'fma 0 'if 1))
 
 (define variadic-ops (seteq '+ '* 'and 'or))
 (define chainable-cmp-ops (seteq '< '<= '> '>=))
@@ -303,7 +266,8 @@
       (for/list ([lhs (in-list ffi-args)]
                  [rhs (in-list (cdr ffi-args))])
         (rival_expr_binary builder op lhs rhs)))
-    (foldl (lambda (comparison acc) (rival_expr_binary builder 'and acc comparison))
+    (foldl (lambda (comparison acc)
+             (rival_expr_binary builder (hash-ref binary-ops 'and) acc comparison))
            (car comparisons)
            (cdr comparisons)))
 
@@ -334,18 +298,19 @@
                                    (number->string (numerator exact-val))
                                    (number->string (denominator exact-val))))]
       [(? real?) (rival_expr_f64 builder (exact->inexact expr))]
-      [`(- ,x) (rival_expr_unary builder 'neg (compile x))]
-      [`((sinu ,n) ,x) (rival_expr_unary_param builder 'sinu n (compile x))]
-      [`((cosu ,n) ,x) (rival_expr_unary_param builder 'cosu n (compile x))]
-      [`((tanu ,n) ,x) (rival_expr_unary_param builder 'tanu n (compile x))]
-      [`(fma ,a ,b ,c) (rival_expr_ternary builder 'fma (compile a) (compile b) (compile c))]
-      [`(if ,c ,t ,f) (rival_expr_ternary builder 'if (compile c) (compile t) (compile f))]
+      [`(- ,x) (rival_expr_unary builder (hash-ref unary-ops 'neg) (compile x))]
       [`(,op ,x)
-       #:when (set-member? unary-ops op)
-       (rival_expr_unary builder op (compile x))]
+       #:when (hash-has-key? unary-ops op)
+       (rival_expr_unary builder (hash-ref unary-ops op) (compile x))]
+      [`((,op ,n) ,x)
+       #:when (hash-has-key? unary-param-ops op)
+       (rival_expr_unary_param builder (hash-ref unary-param-ops op) n (compile x))]
       [`(,op ,x ,y)
-       #:when (hash-ref binary-ops op #f)
+       #:when (hash-has-key? binary-ops op)
        (rival_expr_binary builder (hash-ref binary-ops op) (compile x) (compile y))]
+      [`(,op ,x ,y ,z)
+       #:when (hash-has-key? ternary-ops op)
+       (rival_expr_ternary builder (hash-ref ternary-ops op) (compile x) (compile y) (compile z))]
       [`(,op ,x ,y ,rest ...)
        #:when (set-member? variadic-ops op)
        (fold-binary (hash-ref binary-ops op) (list* x y rest))]
@@ -370,14 +335,7 @@
      (define target (discretization-target (car discs)))
      (unless (andmap (lambda (d) (= (discretization-target d) target)) (cdr discs))
        (error 'rival-compile "All discretizations must have the same target"))
-     (define n (length discs))
-     (define types-arr (malloc _rival-disc-type n 'raw))
-     (for ([i (in-range n)]
-           [d (in-list discs)])
-       (ptr-set! types-arr _rival-disc-type i (discretization-type d)))
-     (define disc-ptr (rival_disc_mixed types-arr n target))
-     (free-ptr types-arr)
-     disc-ptr]))
+     (rival_disc_mixed (map discretization-type discs) target)]))
 
 (define (rival-compile exprs vars discs)
   (compile-inner exprs vars discs 'adaptive 'rival-compile))
@@ -390,12 +348,7 @@
   (define n-exprs (length exprs))
   (define max-precision (*rival-max-precision*))
 
-  (define vars-arr (malloc _pointer n-vars 'raw))
-  (for ([i (in-naturals)]
-        [var (in-list vars)])
-    (ptr-set! vars-arr _pointer i (malloc-c-string (symbol->string var))))
-  (define builder (rival_expr_builder_new vars-arr n-vars))
-  (free-c-string-array vars-arr n-vars)
+  (define builder (rival_expr_builder_new (map symbol->string vars)))
   (unless builder
     (error error-name "Failed to create expression builder"))
 
@@ -405,29 +358,23 @@
                     (define compile-expr (make-expr-compiler builder))
                     (define expr-handles (map compile-expr exprs))
                     (define disc-ptr (discs->ffi discs))
-                    (define exprs-arr (malloc _uint32 n-exprs 'raw))
-                    (for ([i (in-naturals)]
-                          [handle (in-list expr-handles)])
-                      (ptr-set! exprs-arr _uint32 i handle))
                     (begin0 (rival_machine_new builder
-                                               exprs-arr
-                                               n-exprs
+                                               expr-handles
                                                disc-ptr
                                                max-precision
                                                (*rival-profile-executions*)
                                                strategy)
-                            (free-ptr exprs-arr)
                             (rival_disc_free disc-ptr)))
                   (lambda () (rival_expr_builder_free builder))))
 
   (unless machine-ptr
     (error error-name "Failed to create machine"))
 
-  (define arg-buf (malloc _pointer n-vars 'raw))
-  (define out-buf (malloc _pointer n-exprs 'raw))
-  (define rect-buf (malloc _pointer (* 2 n-vars) 'raw))
-  (define f64-args (malloc _double n-vars 'raw))
-  (define f64-outs (malloc _double n-exprs 'raw))
+  (define arg-buf (malloc _pointer n-vars 'atomic-interior))
+  (define out-buf (malloc _pointer n-exprs 'atomic-interior))
+  (define rect-buf (malloc _pointer (* 2 n-vars) 'atomic-interior))
+  (define f64-arg-buf (malloc _double n-vars 'atomic-interior))
+  (define f64-out-buf (malloc _double n-exprs 'atomic-interior))
 
   (define arg-bfs (make-vector n-vars #f))
   (define rect-bfs (make-vector (* 2 n-vars) #f))
@@ -458,8 +405,8 @@
                      rect-buf
                      rect-bfs
                      name-table
-                     f64-args
-                     f64-outs))
+                     f64-arg-buf
+                     f64-out-buf))
   (register-finalizer wrapper machine-destroy)
   wrapper)
 
@@ -517,26 +464,25 @@
   (define n-args (vector-length pt))
   (check-arity! error-name "point" machine n-args)
   (check-hints! error-name machine hints)
-  (define args (machine-wrapper-f64-args machine))
+  (define args (machine-wrapper-f64-arg-buf machine))
   (for ([i (in-range n-args)]
         [arg (in-vector pt)])
     (ptr-set! args _double i (input->double arg)))
   (define n-outs (machine-wrapper-n-exprs machine))
-  (define outs (machine-wrapper-f64-outs machine))
+  (define outs (machine-wrapper-f64-out-buf machine))
   (define status-code
     (rival_apply_f64 machine args n-args outs n-outs hints (*rival-max-iterations*) require-all?))
   (unless (eq? status-code 'ok)
     (raise-result-code error-name status-code pt))
   (define discs (machine-wrapper-discs machine))
-  (begin0 (for/vector #:length n-outs
-                      ([i (in-range n-outs)]
-                       [disc (in-list discs)])
-            (define x (ptr-ref outs _double i))
-            (cond
-              [(nan? x) 'invalid]
-              [(eq? (discretization-type disc) 'bool) (not (zero? x))]
-              [else x]))
-          (void/reference-sink machine)))
+  (for/vector #:length n-outs
+              ([i (in-range n-outs)]
+               [disc (in-list discs)])
+    (define x (ptr-ref outs _double i))
+    (cond
+      [(nan? x) 'invalid]
+      [(eq? (discretization-type disc) 'bool) (not (zero? x))]
+      [else x])))
 
 (define (rival-apply machine pt [hints #f])
   (apply-inner machine pt hints #t 'rival-apply))
@@ -658,5 +604,3 @@
 (define (rival-profiling-enabled? machine)
   (eq? (rival_machine_get_profiling machine) 'on))
 
-(define (free-ptr p)
-  (when p (free p)))
