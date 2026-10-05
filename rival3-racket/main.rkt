@@ -66,15 +66,6 @@
       (if x 1.0 0.0)
       x))
 
-(define (exactly-representable-at-current-bf-precision? x)
-  (define lo
-    (parameterize ([bf-rounding-mode 'down])
-      (bf x)))
-  (define hi
-    (parameterize ([bf-rounding-mode 'up])
-      (bf x)))
-  (equal? lo hi))
-
 (define boolean-discretization (discretization 'bool 53 bf->bool))
 (define flonum-discretization (discretization 'f64 53 bigfloat->flonum))
 
@@ -131,7 +122,6 @@
 
 (define-rival rival_expr_var (_fun _pointer _string -> _uint32))
 (define-rival rival_expr_f64 (_fun _pointer _double -> _uint32))
-(define-rival rival_expr_rational (_fun _pointer _int64 _int64 -> _uint32))
 (define-rival rival_expr_bigint (_fun _pointer _string -> _uint32))
 (define-rival rival_expr_bigrational (_fun _pointer _string _string -> _uint32))
 (define-rival rival_expr_pi (_fun _pointer -> _uint32))
@@ -286,18 +276,12 @@
       [(or 'INFINITY '(INFINITY)) (rival_expr_f64 builder +inf.0)]
       [(or 'NAN '(NAN)) (rival_expr_f64 builder +nan.0)]
       [(? symbol?) (rival_expr_var builder (symbol->string expr))]
-      [(? exact-integer?)
-       (if (exactly-representable-at-current-bf-precision? expr)
-           (rival_expr_bigint builder (number->string expr))
-           (rival_expr_bigrational builder (number->string expr) "1"))]
-      [(? rational?)
-       (define exact-val (inexact->exact expr))
-       (if (integer? expr)
-           (rival_expr_bigint builder (number->string exact-val))
-           (rival_expr_bigrational builder
-                                   (number->string (numerator exact-val))
-                                   (number->string (denominator exact-val))))]
-      [(? real?) (rival_expr_f64 builder (exact->inexact expr))]
+      [(? exact-integer?) (rival_expr_bigint builder (number->string expr))]
+      [(and (? rational?) (? exact?))
+       (rival_expr_bigrational builder
+                               (number->string (numerator expr))
+                               (number->string (denominator expr)))]
+      [(? flonum?) (rival_expr_f64 builder expr)]
       [`(- ,x) (rival_expr_unary builder (hash-ref unary-ops 'neg) (compile x))]
       [`(,op ,x)
        #:when (hash-has-key? unary-ops op)
