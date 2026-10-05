@@ -12,7 +12,7 @@ pub use expr::{
     RivalUnaryParamOp,
 };
 pub use hints::RivalHints;
-pub use machine::{RivalAnalyzeResult, RivalMachine, RivalProfilingMode};
+pub use machine::{RivalAnalyzeResult, RivalMachine, RivalProfilingMode, RivalStrategy};
 pub use profile::{RivalAggregatedProfile, RivalExecution, RivalProfileSummary};
 
 #[repr(i32)]
@@ -34,7 +34,7 @@ impl RivalError {
     }
 }
 
-pub const RIVAL_ABI_VERSION: u32 = 2;
+pub const RIVAL_ABI_VERSION: u32 = 3;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rival_version() -> u32 {
