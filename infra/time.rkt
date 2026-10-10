@@ -483,7 +483,7 @@
         (pretty-print (map read-from-string (hash-ref rec 'exprs))))
 
       (define mem-before (current-memory-use 'cumulative))
-      (match-define (list c-time v-num v-time i-num i-time u-num u-time rival-baseline-diff)
+      (match-define (list c-time v-num v-time i-num i-time u-num u-time _)
         (time-exprs (time-expr rec optimal-rec timeline sollya-reeval)))
       (define mem-after (current-memory-use 'cumulative))
       (define mem-delta (- mem-after mem-before))
@@ -504,7 +504,7 @@
               (~r i-time #:precision '(= 3) #:min-width 8)
               (~r u-time #:precision '(= 3) #:min-width 8)
               (~r mem-mib #:precision '(= 3) #:min-width 8))
-      (list i t-time c-time v-num v-time i-num i-time u-num u-time mem-mib rival-baseline-diff)))
+      (list i t-time c-time v-num v-time i-num i-time u-num u-time mem-mib)))
   (printf "\nDATA:\n")
   (printf "\tNUMBER OF TUNED BENCHMARKS = ~a\n" (*num-tuned-benchmarks*))
   (printf "\tRIVAL TIMEOUTS = ~a\n" (*rival-timeout*))
@@ -607,8 +607,7 @@
             ("(s)" "s")
             "Unable"
             ("(s)" "s")
-            ("Memory" "MiB")
-            "Baseline-valid, Rival-exit"))
+            ("Memory" "MiB")))
     (html-write-table html-port "Expression timing" cols)
     (for ([row (in-list expression-table)])
       (html-write-row html-port row))
@@ -617,17 +616,11 @@
     (html-end-table html-port))
 
   (when expression-table
-    (html-add-plot html-port "ratio_plot_iter.png" #:width 400 #:height 250)
     (html-add-plot html-port "ratio_plot_precision.png" #:width 400 #:height 250)
-    (html-add-plot html-port "ratio_plot_precision_base_norm.png" #:width 400 #:height 250)
-    (html-add-plot html-port "point_graph.png" #:width 400 #:height 350)
     (html-add-plot html-port "cnt_per_iters_plot.png" #:width 400 #:height 300)
-    (html-add-plot html-port "repeats_plot.png" #:width 400 #:height 300)
-    (html-add-plot html-port "density_plot.png" #:width 400 #:height 300)
     (html-add-plot html-port "density_cdf_plot.png" #:width 400 #:height 300)
     (html-add-plot html-port "optimality_plot.png" #:width 400 #:height 300)
-    (html-add-plot html-port "histogram_valid.png" #:width 650 #:height 275)
-    (html-add-plot html-port "histogram_all.png" #:width 650 #:height 200))
+    (html-add-plot html-port "histogram_valid.png" #:width 650 #:height 275))
 
   (when profile-port
     (html-write-profile html-port)))
