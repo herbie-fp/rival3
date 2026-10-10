@@ -27,7 +27,6 @@ def plot_empty(args):
     ax.text(0.5, 0.5, "No optimality data", ha="center", va="center")
     ax.set_axis_off()
     plt.tight_layout()
-    plt.savefig(args.path + "/optimality_plot.pdf", format="pdf")
     plt.savefig(args.path + "/optimality_plot.png", format="png")
 
 
@@ -81,9 +80,6 @@ def plot_optimality(outcomes, args):
         "$2^{" + str(pos + 7) + "}$" if (pos + 7) % 2 == 1 else " "
         for pos in range(len(iterations))
     ])
-
-    plt.tight_layout()
-    plt.savefig(args.path + "/optimality_plot.pdf", format="pdf")
 
     ax.set_title("Precision compared to optimal")
     plt.tight_layout()

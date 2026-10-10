@@ -19,7 +19,7 @@ path = "src/bin/main.rs"
 
 [dependencies]
 rug = { version = "1.28", features = ["float"] }
-gmp-mpfr-sys = "1.6"
+gmp-mpfr-sys = "=1.6.4"
 rand = "0.9"
 indexmap = "2.12"
 # TODO: remove

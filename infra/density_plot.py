@@ -1,5 +1,4 @@
 import numpy as np
-import requests
 from matplotlib import pyplot as plt, ticker
 import matplotlib
 import pandas as pd
@@ -14,16 +13,10 @@ def load_outcomes(path):
     return outcomes
 
 def bucket_density(outcomes):
-    outcomes1 = outcomes.copy()
-    outcomes1['precision'] = np.array(outcomes1['precision'], dtype=float)
-    outcomes1['precision'] = np.floor(outcomes1['precision'] / 0.01) * 0.01
-    outcomes1 = outcomes1.groupby(by=['tool', 'precision'], as_index=False, sort=True).sum()
-
-    outcomes2 = outcomes.copy()
-    outcomes2['precision'] = np.clip(np.array(outcomes2['precision'], dtype=float), 0.0, 1.0)
-    outcomes2['precision'] = np.minimum(np.floor(outcomes2['precision'] / 0.05) * 0.05, 0.95)
-    outcomes2 = outcomes2.groupby(by=['tool', 'precision'], as_index=False, sort=True).sum()
-    return outcomes1, outcomes2
+    outcomes = outcomes.copy()
+    outcomes['precision'] = np.array(outcomes['precision'], dtype=float)
+    outcomes['precision'] = np.floor(outcomes['precision'] / 0.01) * 0.01
+    return outcomes.groupby(by=['tool', 'precision'], as_index=False, sort=True).sum()
 
 def lower_precision_percentage(outcomes, tool, threshold=0.2):
     tool_outcomes = outcomes[outcomes["tool"] == tool]
@@ -32,27 +25,6 @@ def lower_precision_percentage(outcomes, tool, threshold=0.2):
         return 0.0
     lower = tool_outcomes.loc[tool_outcomes["precision"] < threshold, "count"].sum()
     return round(lower / total * 100, 2)
-
-def plot_density(rival, args):
-    fig, ax = plt.subplots(figsize=(4, 3))
-
-    ax.bar(rival['precision']+0.025, rival["count"], color="red", alpha=0.7, width=0.05, label='reval')
-
-    ax.set_ylabel("Number of operations")
-    ax.set_xlabel("Precision (normalized)")
-    ax.set_xlim(0.0, 1.0)
-    ax.set_xticks(np.linspace(0.0, 1.0, 6))
-    ax.xaxis.set_major_formatter(ticker.FormatStrFormatter('%.1f'))
-    ax.yaxis.grid(True, linestyle='-', which='major', color='grey', alpha=0.3)
-
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(args.path + "/density_plot.pdf", format="pdf")
-
-    ax.set_title("Density plot")
-    plt.tight_layout()
-    plt.savefig(args.path + "/density_plot.png", format="png")
-    plt.close(fig)
 
 def plot_density_cdf(outcomes, args):
     fig, ax = plt.subplots(figsize=(4, 3))
@@ -86,28 +58,22 @@ def plot_density_cdf(outcomes, args):
     ax.xaxis.grid(True, linestyle='-', which='major', color='grey', alpha=0.3)
 
     plt.legend(loc="best")
-    plt.tight_layout()
-    plt.savefig(args.path + "/density_cdf_plot.pdf", format="pdf")
-
     ax.set_title("Density CDF")
     plt.tight_layout()
     plt.savefig(args.path + "/density_cdf_plot.png", format="png")
     plt.close(fig)
 
 def plot_density_plots(args):
-    outcomes = load_outcomes(args.timeline)
-    outcomes1, outcomes2 = bucket_density(outcomes)
-    rival = outcomes2[outcomes2["tool"] == "rival"]
+    outcomes = bucket_density(load_outcomes(args.timeline))
 
-    print("\\newcommand{\\DensityPercentageOfLowerPrecisionReval}{" + str(lower_precision_percentage(outcomes1, "rival")) + "}")
-    print("\\newcommand{\\DensityPercentageOfLowerPrecisionBaseline}{" + str(lower_precision_percentage(outcomes1, "baseline")) + "}")
-    print("\\newcommand{\\DensityPercentageOfLowerPrecisionZiv}{" + str(lower_precision_percentage(outcomes1, "ziv")) + "}")
-    print("\\newcommand{\\DensityPercentageOfLowerPrecisionOptimal}{" + str(lower_precision_percentage(outcomes1, "optimal")) + "}")
-    print("\\newcommand{\\DensityAdvantageRevalOverBaseline}{" + str(round(lower_precision_percentage(outcomes1, "rival") / lower_precision_percentage(outcomes1, "baseline"), 2)) + "}")
-    print("\\newcommand{\\DensityAdvantageRevalOverZiv}{" + str(round(lower_precision_percentage(outcomes1, "rival") / lower_precision_percentage(outcomes1, "ziv"), 2)) + "}")
+    print("\\newcommand{\\DensityPercentageOfLowerPrecisionReval}{" + str(lower_precision_percentage(outcomes, "rival")) + "}")
+    print("\\newcommand{\\DensityPercentageOfLowerPrecisionBaseline}{" + str(lower_precision_percentage(outcomes, "baseline")) + "}")
+    print("\\newcommand{\\DensityPercentageOfLowerPrecisionZiv}{" + str(lower_precision_percentage(outcomes, "ziv")) + "}")
+    print("\\newcommand{\\DensityPercentageOfLowerPrecisionOptimal}{" + str(lower_precision_percentage(outcomes, "optimal")) + "}")
+    print("\\newcommand{\\DensityAdvantageRevalOverBaseline}{" + str(round(lower_precision_percentage(outcomes, "rival") / lower_precision_percentage(outcomes, "baseline"), 2)) + "}")
+    print("\\newcommand{\\DensityAdvantageRevalOverZiv}{" + str(round(lower_precision_percentage(outcomes, "rival") / lower_precision_percentage(outcomes, "ziv"), 2)) + "}")
 
-    plot_density(rival, args)
-    plot_density_cdf(outcomes1, args)
+    plot_density_cdf(outcomes, args)
 
 parser = argparse.ArgumentParser(prog='histograms.py', description='Script outputs mixed precision histograms for a Herbie run')
 parser.add_argument('-t', '--timeline', dest='timeline', default="report/timeline.json")

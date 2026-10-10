@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib
-import requests
 
 def plot_cnt_per_iters(outcomes, args):
     # Create figure
@@ -47,9 +46,6 @@ def plot_cnt_per_iters(outcomes, args):
     ax.set_xticks(np.arange(len(iterations)) + 1)
     ax.set_xticklabels([str(iteration) if iteration % 2 == 0 else " " for iteration in iterations])
     plt.ticklabel_format(axis='y', style='sci', scilimits=(4,4))
-    
-    plt.tight_layout()
-    plt.savefig(args.path + "/cnt_per_iters_plot.pdf", format="pdf")
     
     ax.set_title("Convergence distribution")
     plt.tight_layout()

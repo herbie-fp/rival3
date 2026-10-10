@@ -27,38 +27,6 @@ def configure_speed_axis(ax):
     ax.yaxis.grid(True, linestyle='-', which='major', color='grey', alpha=0.3)
 
 
-def plot_speed_graph_rival_iter(outcomes, args):
-    fig, ax = plt.subplots(figsize=(4, 2.5))
-    
-    outcomes = outcomes.drop(['baseline_iter', 'number_of_ops'], axis=1)
-    outcomes = outcomes.groupby(['rival_iter', 'tool_name'], as_index=False).sum()
-    
-    baseline_cmp = outcomes.loc[(outcomes['tool_name'] == "valid-baseline") & (outcomes['rival_iter'] > 0)]
-    ziv_cmp = outcomes.loc[(outcomes['tool_name'] == "valid-ziv") & (outcomes['rival_iter'] > 0)]
-    rival_cmp = outcomes.loc[(outcomes['tool_name'] == "valid-rival") & (outcomes['rival_iter'] > 0)]
-    sollya_cmp = outcomes.loc[(outcomes['tool_name'] == "valid-sollya") & (outcomes['rival_iter'] > 0)]
-    
-    x, y = tool_speeds(rival_cmp, 'rival_iter')
-    ax.plot(x, y, '.-', linewidth=2.0, color='r', label='reval')
-    x, y = tool_speeds(ziv_cmp, 'rival_iter')
-    ax.plot(x, y, '-', marker='s', linewidth=2.5, color='dimgrey', label='ziv')
-    x, y = tool_speeds(baseline_cmp, 'rival_iter')
-    ax.plot(x, y, '-', linewidth=2.0, color='g', label='ziv+')
-    x, y = tool_speeds(sollya_cmp, 'rival_iter')
-    ax.plot(x, y, ':', marker='>', linewidth=2.0, color='b', label='sollya')
-    
-    ax.legend()
-    ax.set_xlabel("Difficulty")
-    ax.set_ylabel("Speed")
-    configure_speed_axis(ax)
-    plt.tight_layout()
-    plt.savefig(args.path + "/ratio_plot_iter.pdf", format="pdf")
-    
-    ax.set_title("Speed plot per iteration")
-    plt.tight_layout()
-    plt.savefig(args.path + "/ratio_plot_iter.png", format="png")
-
-
 def plot_speed_graph_baseline_precision(outcomes, args):
     fig, ax = plt.subplots(figsize=(4, 2.5))
     
@@ -101,9 +69,6 @@ def plot_speed_graph_baseline_precision(outcomes, args):
     ax.set_xticks(np.arange(len(xticks)), xticks)
     ax.set_xticklabels(["$2^{" + str(i + 7) + "}$" for i, _ in enumerate(xticks)])
     
-    plt.tight_layout()
-    plt.savefig(args.path + "/ratio_plot_precision.pdf", format="pdf")
-    
     ax.set_title("Speed plot per precision")
     plt.tight_layout()
     plt.savefig(args.path + "/ratio_plot_precision.png", format="png")
@@ -138,5 +103,4 @@ parser.add_argument('-o', '--output-path', dest='path', default="report")
 args = parser.parse_args()
 
 outcomes = load_outcomes(args.timeline)
-plot_speed_graph_rival_iter(outcomes, args)
 plot_speed_graph_baseline_precision(outcomes, args)
