@@ -32,7 +32,7 @@
     [_ 0]))
 
 
-(define (time-expr rec optimal-rec timeline sollya-reeval)
+(define (time-expr rec timeline)
   (define exprs (map read-from-string (hash-ref rec 'exprs)))
   (define vars (map read-from-string (hash-ref rec 'vars)))
   (unless (andmap symbol? vars)
@@ -40,12 +40,6 @@
   (match-define `(bool flonum ...) (map read-from-string (hash-ref rec 'discs)))
   (define discs (cons boolean-discretization (map (const flonum-discretization) (cdr exprs))))
   
-  (unless (equal? (hash-ref rec 'exprs) (hash-ref optimal-rec 'exprs))
-    (error 'time "Optimal precision cache does not match benchmark expressions: ~a" exprs))
-  (define optimal-precision-lists (hash-ref optimal-rec 'points))
-  (unless (= (length (hash-ref rec 'points)) (length optimal-precision-lists))
-    (error 'time "Optimal precision cache point count does not match benchmark expressions: ~a" exprs))
-
   (define number-of-ops (apply + (map depth-of-expr exprs)))
   (define minimal-precision 53)
 
@@ -80,9 +74,11 @@
 
   (define tuned-bench #f)
   (define times
-    (for/list ([pt* (in-list (hash-ref rec 'points))]
-               [optimal-precision-list (in-list optimal-precision-lists)])
-      (match-define (list pt sollya-exs sollya-status sollya-apply-time) pt*)
+    (for/list ([pt* (in-list (hash-ref rec 'points))])
+      (define pt (first pt*))
+      (define sollya-exs #f)
+      (define sollya-status 'invalid)
+      (define sollya-apply-time 0.0)
 
       ; --------------------------- Baseline execution ----------------------------------------------
       (define baseline-start-apply (current-inexact-milliseconds))
@@ -126,41 +122,17 @@
       
       ; --------------------------- Sollya execution ------------------------------------------------
       (when (and sollya-machine (not (equal? rival-status 'invalid)))
-        (match sollya-reeval
-          [#t
-           (set! sollya-apply-time 0.0)
-           (match sollya-machine
-             [#f (list #f #f)] ; if sollya machine is not working for this benchmark
-             [else
-              (with-handlers ([exn:fail? (λ (e)
-                                           (printf "Sollya failed")
-                                           (printf "~a\n" e)
-                                           (sollya-kill sollya-machine)
-                                           (set! sollya-machine #f)
-                                           (list #f #f))])
-                (match-define (list internal-time external-time exs status)
-                  (sollya-apply sollya-machine pt #:timeout (*sampling-timeout*)))
-                (set! sollya-apply-time external-time)
-                (set! sollya-status status)
-                (set! sollya-exs exs))])]
-          [#f
-           (set! sollya-exs
-                 (match sollya-exs
-                   ["#f" #f]
-                   [#f #f]
-                   [_ (fl (string->number sollya-exs))]))
-
-           (set! sollya-status
-                 (match sollya-status
-                   ["#f" 'invalid]
-                   [#f 'invalid]
-                   [_ (string->symbol sollya-status)]))
-
-           (set! sollya-apply-time
-                 (match sollya-apply-time
-                   ["#f" 0.0]
-                   [#f 0.0]
-                   [_ sollya-apply-time]))])
+        (set! sollya-apply-time 0.0)
+        (with-handlers ([exn:fail? (λ (e)
+                                     (printf "Sollya failed")
+                                     (printf "~a\n" e)
+                                     (sollya-kill sollya-machine)
+                                     (set! sollya-machine #f))])
+          (match-define (list internal-time external-time exs status)
+            (sollya-apply sollya-machine pt #:timeout (*sampling-timeout*)))
+          (set! sollya-apply-time external-time)
+          (set! sollya-status status)
+          (set! sollya-exs exs))
         
         ; -------------------------------- Combining results ----------------------------------------
         (when (and (> baseline-iteration 0) (not tuned-bench))
@@ -217,14 +189,18 @@
         (define (push-normalized-density! tool precisions max-prec)
           (for ([precision (in-list precisions)])
             (timeline-push! timeline 'density (list tool (~a (exact->inexact (/ precision max-prec)) #:width 5)))))
+
+        (define optimal-precision-list
+          (and (equal? rival-status 'valid)
+               (equal? baseline-status 'valid)
+               (> baseline-iteration 0)
+            (vector->list
+             (parameterize ([*rival-max-precision* 32256])
+               (rival-machine-find-optimal-precisions rival-machine (list->vector (map bf pt)))))))
         
         ; Density plot data
-        (when (and (equal? rival-status 'valid) (equal? baseline-status 'valid) (equal? ziv-status 'valid) (> baseline-iteration 0))
-          (unless optimal-precision-list
-            (set! optimal-precision-list
-                  (vector->list
-                   (parameterize ([*rival-max-precision* 32256])
-                     (rival-machine-find-optimal-precisions rival-machine (list->vector (map bf pt)))))))
+        (when (and optimal-precision-list
+                   (equal? ziv-status 'valid))
           (define rival-max-precisions (executions->max-precisions rival-executions))
           (define baseline-max-precisions (executions->max-precisions baseline-executions))
           (define ziv-max-precisions (executions->max-precisions ziv-executions))
@@ -255,11 +231,7 @@
           (push-normalized-density! 'optimal optimal-precision-list* max-prec))
 
         ; Close-to-optimal graph
-        (when (and (equal? rival-status 'valid)
-                   (equal? baseline-status 'valid)
-                   (> baseline-iteration 0))
-          (unless optimal-precision-list
-            (error 'optimal-preicison-list "Optimal precision cache does not have a record for a valid point: ~a. Likely, points.json was changed" pt*))
+        (when optimal-precision-list
           (define optimal-precisions (list->vector optimal-precision-list))
           (define rival-max-precisions (executions->max-precisions rival-executions))
           (define baseline-max-precisions (executions->max-precisions baseline-executions))
@@ -449,7 +421,7 @@
         'optimality
         (optimality->jsexpr (hash-ref timeline 'optimality))))
 
-(define (make-expression-table points optimal-points test-id timeline-port sollya-reeval)
+(define (make-expression-table points test-id timeline-port)
   (newline)
   (define total-c 0.0)
   (define total-v 0.0)
@@ -475,7 +447,6 @@
 
   (define table
     (for/list ([rec (in-port read-json points)]
-               [optimal-rec (in-port read-json optimal-points)]
                [i (in-naturals)]
                #:break (and test-id (> i (string->number test-id)))
                #:unless (and test-id (not (equal? (~a i) test-id))))
@@ -484,7 +455,7 @@
 
       (define mem-before (current-memory-use 'cumulative))
       (match-define (list c-time v-num v-time i-num i-time u-num u-time _)
-        (time-exprs (time-expr rec optimal-rec timeline sollya-reeval)))
+        (time-exprs (time-expr rec timeline)))
       (define mem-after (current-memory-use 'cumulative))
       (define mem-delta (- mem-after mem-before))
       (define mem-mib (/ (exact->inexact mem-delta) (* 1024 1024)))
@@ -583,10 +554,10 @@
     (fprintf port "<section id='profile'><h1>Profiling</h1>")
     (fprintf port "<p class='load-text'>Loading profile data...</p></section>")))
 
-(define (run test-id p optimal-p timeline-port sollya-reeval)
+(define (run test-id p timeline-port)
   (define-values (expression-table expression-footer)
     (if (and p (or (not test-id) (string->number test-id)))
-        (make-expression-table p optimal-p test-id timeline-port sollya-reeval)
+        (make-expression-table p test-id timeline-port)
         (values #f #f)))
   (list expression-table expression-footer))
 
@@ -636,9 +607,7 @@
   (define html-port #f)
   (define timeline-port #f)
   (define profile-port #f)
-  (define sollya-reeval #f)
   (define n #f)
-  (define optimal-precisions "infra/optimal_precisions.json")
   (command-line
    #:once-each
    [("--dir")
@@ -655,19 +624,15 @@
     "Produce a JSON profile"
     (set! profile-port (open-output-file fn #:mode 'text #:exists 'replace))]
    [("--id") ns "Run a single test" (set! n ns)]
-   [("--optimal-precisions") fn "Read cached optimal precision vectors from FN"
-                         (set! optimal-precisions fn)]
-   [("--sollya-reeval") "Reevaluate Sollya" (set! sollya-reeval #t)]
    #:args ([points "infra/points.json"])
    (match-define (list ex-t ex-f)
-     (let ([points-port (open-input-file points)]
-           [optimal-precisions-port (open-input-file optimal-precisions)])
+     (let ([points-port (open-input-file points)])
        (if profile-port
            (profile #:order 'total
                     #:delay 0.001
                     #:render (profile-json-renderer profile-port)
-                    (run n points-port optimal-precisions-port timeline-port sollya-reeval))
-           (run n points-port optimal-precisions-port timeline-port sollya-reeval))))
+                    (run n points-port timeline-port))
+           (run n points-port timeline-port))))
    (when dir
      (generate-html html-port profile-port ex-t ex-f dir))))
 
