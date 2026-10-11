@@ -181,7 +181,7 @@ Then, in the same log, find line
 ```
 \newcommand{\NumTunedPoints}{...\xspace}
 ```
-The number should be 567459.
+The number should be `567459`.
 
 > Reval is significantly faster, by 3.97× on average, and its advantage grows with difficulty: for the most difficult evaluations, which require precisions up to 2^14, Reval is 9.26× faster than Sollya.
 
@@ -192,12 +192,12 @@ Using `result/full-evaluation.log`, find
 ```
 \newcommand{\RivalAvgSpeedupOverSollya}{...\xspace} 
 ```
-It is an average speedup of Rival over Sollya, the exact number differ from run to run, but it should be around 4x or higher
+It is an average speedup of Rival over Sollya, the exact number differ from run to run, but it should be around `4x` or higher
 
 ```
 \newcommand{\RivalMaxSpeedupOverSollya}{...\xspace} 
 ```
-It is a maximum speedup of Rival over Sollya, the exact number differ from run to run, but it should be around 10x or higher
+It is a maximum speedup of Rival over Sollya, the exact number differ from run to run, but it should be around `10x` or higher
 
 Using `result/ratio_plot_precision.pdf` make sure that Rival curve is above than Ziv and Ziv+ curves. The exact speedup might differ from run to run.
 
@@ -214,7 +214,7 @@ Using `result/full-evaluation.log`, find
 \newcommand{\RevalCloserToOptimalThanZiv}{...}
 \newcommand{\RevalCloserToOptimalThanBaseline}{...}
 ```
-Make sure that these numbers are 14.41 (closer than Ziv) and 8.01 (closer than Ziv+).
+Make sure that these numbers are `14.41` (closer than Ziv) and `8.01` (closer than Ziv+).
 
 > Numerically, Reval executes 43.64% of primitives at 20% of the highest precision per all four tools, while Ziv+ executes 31.93% of primitives, and Ziv performs the worst with 1.06% of primitives. No tool reaches the optimal 50.41% of primitives executed at 20% of the highest prec
 
@@ -225,7 +225,7 @@ Using `result/full-evaluation.log`, find:
 \newcommand{\DensityPercentageOfLowerPrecisionZiv}{...}
 \newcommand{\DensityPercentageOfLowerPrecisionOptimal}{...}
 ```
-The numbers should be: 43.64, 31.93, 1.06, 50.41. Minor difference is unlikely but possible.
+The numbers should be: `43.64`, `31.93`, `1.06`, `50.41`. Minor difference is unlikely but possible.
 
 #### RQ3
 
@@ -236,7 +236,7 @@ Using `result/full-evaluation.log`, find:
 \newcommand{\RivalSecondIterConvergence}{...}
 \newcommand{\BaselineSecondIterConvergence}{...}
 ```
-These numbers should be: 59.05 and 32.38, minor difference is possible, our latest run produced 59.07 and 32.39. 
+These numbers should be: `59.05` and `32.38`, minor difference is possible, our latest run produced `59.07` and `32.39`.
 
 > This leads to a radical reduction in the number of primitive computations needed by Reval: 31.7% fewer than Ziv+, 62.16% fewer than Ziv.
 
@@ -245,7 +245,7 @@ Using `result/full-evaluation.log`, find:
 \newcommand{\RivalInstrCountLessThanBaseline}{...}
 \newcommand{\RivalInstrCountLessThanZiv}{...}
 ```
-The numbers should be 31.7 and 62.16, minor difference is possible.
+The numbers should be `31.7` and `62.16`, minor difference is possible.
 
 > The right most “tuning” column also shows that precision tuning itself is very fast — about 2.6% of total runtime.
 
@@ -253,7 +253,7 @@ Using `result/full-evaluation.log`, find:
 ```
 \newcommand{\TuningTimePercentage}{...}
 ```
-The number should be 2.6, slight difference is possible, our latest run recorded 2.7.
+The number should be `2.6`, slight difference is possible, our latest run recorded `2.7`.
 
 ## Try the Rust CLI
 
