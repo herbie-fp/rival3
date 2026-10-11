@@ -135,7 +135,7 @@
           (set! sollya-exs exs))
         
         ; -------------------------------- Combining results ----------------------------------------
-        (when (and (> baseline-iteration 0) (not tuned-bench))
+        (when (and (> ziv-iteration 0) (not tuned-bench))
           (set! tuned-bench #t)
           (*num-tuned-benchmarks* (add1 (*num-tuned-benchmarks*))))
 

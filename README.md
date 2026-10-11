@@ -1,4 +1,4 @@
-# Rival 3
+# Rival (paper name is Reval)
 
 Rival evaluates real expressions to high precision. This repository contains a
 timing evaluation comparing Rival with the Ziv+, Ziv, and Sollya evaluators.
@@ -107,6 +107,7 @@ docker run --rm --network none --mount type=bind,src="$PWD/result",dst=/output \
       python3 infra/cnt_per_iters_plot.py -t /output/timeline.json -o /output
       python3 infra/density_plot.py -t /output/timeline.json -o /output
       python3 infra/optimality_plot.py -t /output/timeline.json -o /output
+      python3 infra/repeats_plot.py -t /output/timeline.json
       cp infra/profile.js /output/profile.js
     } 2>&1 | tee /output/kick-the-tires.log
   '
@@ -136,6 +137,7 @@ docker run --rm --network none --mount type=bind,src="$PWD/result",dst=/output \
       python3 infra/cnt_per_iters_plot.py -t /output/timeline.json -o /output
       python3 infra/density_plot.py -t /output/timeline.json -o /output
       python3 infra/optimality_plot.py -t /output/timeline.json -o /output
+      python3 infra/repeats_plot.py -t /output/timeline.json
       cp infra/profile.js /output/profile.js
     } 2>&1 | tee /output/full-evaluation.log
   '
@@ -145,6 +147,110 @@ Once it's done, open `result/index.html` directly in a browser and check that
 all five plots appear. The corresponding PNG and PDF files should also be in
 `result/`. Some browsers block the profiling widget from loading local JSON
 files; the plots remain available directly as PNG and PDF files.
+
+Please, proceed to the "Verifying paper claims" once the full evaluation is done.
+
+### Verifying paper claims
+
+Please, compare obtained plots to the ones in the paper.
+The mappings are:
+`ratio_plot_precision.pdf*` -> Figure 2
+`optimality_plot.pdf` -> Figure 3
+`density_cdf_plot.pdf` -> Figure 4
+`cnt_per_iters_plot.pdf` -> Figure 5
+`histogram_valid.pdf` -> Figure 6
+
+Slight differences are expected for Figure 2, however, the trend should be the same: Rival should outperform other tools.
+
+Almost no significant differences is expected for other figures.
+
+#### RQ1
+
+> All tools are run on 469 expressions totaling 567459 inputs.
+
+Use `result/full-evaluation.log`, scroll to the bottom and find
+```
+NUMBER OF TUNED BENCHMARKS = ...
+```
+The number should be `469`.
+
+Then, in the same log, find line 
+```
+\newcommand{\NumTunedPoints}{...\xspace}
+```
+The number should be 567459.
+
+> Reval is significantly faster, by 3.97× on average, and its advantage grows with difficulty: for the most difficult evaluations, which require precisions up to 2^14, Reval is 9.26× faster than Sollya.
+
+> Reval is faster than Sollya at all precisions, 3.97× faster on average. Moreover its advantage increases with difficulty, up to 9.26× on the most difficult evaluations. The Ziv and Ziv+ ablations demonstrate that Reval’s advantage, especially on the most difficult evaluations, is due largely to Reval’s precision assignment algorithm.
+
+Using `result/full-evaluation.log`, find
+
+```
+\newcommand{\RivalAvgSpeedupOverSollya}{...\xspace} 
+```
+It is an average speedup of Rival over Sollya, the exact number differ from run to run, but it should be around 4x or higher
+
+```
+\newcommand{\RivalMaxSpeedupOverSollya}{...\xspace} 
+```
+It is a maximum speedup of Rival over Sollya, the exact number differ from run to run, but it should be around 10x or higher
+
+Using `result/ratio_plot_precision.pdf` make sure that Rival curve is above than Ziv and Ziv+ curves. The exact speedup might differ from run to run.
+
+> Reval however, not only retains but grows its advantage, demonstrating that its precision assignment algorithm is largely responsible for its good performance on the most challenging inputs.
+
+Using `result/ratio_plot_precision.pdf` make sure that Rival's curve is getting more above Ziv, Ziv+ and Sollya as precision increases (highest precisions might be noisy).
+
+#### RQ2
+
+> However, Reval’s precision assignment algorithm substantially outperforms both Ziv and Ziv+: 8.01× closer to the optimal precision assignment than Ziv+, and 14.41× closer than Ziv.
+
+Using `result/full-evaluation.log`, find 
+```
+\newcommand{\RevalCloserToOptimalThanZiv}{...}
+\newcommand{\RevalCloserToOptimalThanBaseline}{...}
+```
+Make sure that these numbers are 14.41 (closer than Ziv) and 8.01 (closer than Ziv+).
+
+> Numerically, Reval executes 43.64% of primitives at 20% of the highest precision per all four tools, while Ziv+ executes 31.93% of primitives, and Ziv performs the worst with 1.06% of primitives. No tool reaches the optimal 50.41% of primitives executed at 20% of the highest prec
+
+Using `result/full-evaluation.log`, find: 
+```
+\newcommand{\DensityPercentageofLowerPrecisionReval}{...}
+\newcommand{\DensityPercentageofLowerPrecisionBaseline}{...}
+\newcommand{\DensityPercentageofLowerPrecisionZiv}{...}
+\newcommand{\DensityPercentageofLowerPrecisionOptimal}{...}
+```
+The numbers should be: 43.64, 31.93, 1.06, 50.41. Minor difference is unlikely but possible.
+
+#### RQ3
+
+> after two iterations, 59.05% of Reval’s inputs have converged while only 32.38% of Ziv+’s have, with Ziv performing about the same.
+
+Using `result/full-evaluation.log`, find:
+```
+\newcommand{\RivalSecondIterConvergence}{...}
+\newcommand{\BaselineSecondIterConvergence}{...}
+```
+These numbers should be: 59.05 and 32.38, minor difference is possible, our latest run produced 59.07 and 32.39. 
+
+> This leads to a radical reduction in the number of primitive computations needed by Reval: 31.7% fewer than Ziv+, 62.16% fewer than Ziv.
+
+Using `result/full-evaluation.log`, find:
+```
+\newcommand{\RivalInstrCountLessThanBaseline}{...}
+\newcommand{\RivalInstrCountLessThanZiv}{...}
+```
+The numbers should be 31.7 and 62.16, minor difference is possible.
+
+> The right most “tuning” column also shows that precision tuning itself is very fast — about 2.6% of total runtime.
+
+Using `result/full-evaluation.log`, find:
+```
+\newcommand{\TuningTimePercentage}{...}
+```
+The number should be 2.6, slight difference is possible, our latest run recorded 2.7.
 
 ## Try the Rust CLI
 
