@@ -290,3 +290,78 @@ Total: 5.2 µs
 The `Bits` columns show the precision used for each instruction in each
 iteration. The final value is the computed interval.
 
+
+Additionally, you might want to try Overview examples in CLI.
+
+docker run --rm --network none rival-artifact   /workspace/target/release/rival-cli   "(/ (- 1 (cos x)) (sin x))" "(x)" "(1e-8)"
+Executed 5 instructions for 2 iterations:
+
+┌────────┬────────┬────────┬────────┬────────┐
+│ Name   │ 0 Bits │ 0 Time │ 1 Bits │ 1 Time │
+├────────┼────────┼────────┼────────┼────────┤
+│ adjust │        │        │        │ 0.4 µs │
+│ Cos    │     62 │ 1.6 µs │    117 │ 1.9 µs │
+│ Sub    │     60 │ 0.3 µs │     60 │ 0.2 µs │
+│ Sin    │     60 │ 2.4 µs │        │        │
+│ Div    │     58 │ 0.3 µs │     58 │ 0.2 µs │
+│ Total  │        │ 4.6 µs │        │ 2.8 µs │
+└────────┴────────┴────────┴────────┴────────┘
+
+Final value: [0.000000005, 0.000000005]
+Total: 8.6 µs
+
+
+docker run --rm --network none rival-artifact   /workspace/target/release/rival-cli   "(/ (- 1 (cos x)) (sin x))" "(x)" "(1e-80)"
+Executed 5 instructions for 4 iterations:
+
+┌────────┬────────┬────────┬────────┬────────┬────────┬────────┬────────┬────────┐
+│ Name   │ 0 Bits │ 0 Time │ 1 Bits │ 1 Time │ 2 Bits │ 2 Time │ 3 Bits │ 3 Time │
+├────────┼────────┼────────┼────────┼────────┼────────┼────────┼────────┼────────┤
+│ adjust │        │        │        │ 0.5 µs │        │ 0.4 µs │        │ 0.3 µs │
+│ Cos    │     62 │ 0.3 µs │    178 │ 0.3 µs │    347 │ 0.3 µs │    622 │ 6.0 µs │
+│ Sub    │     60 │ 0.3 µs │     60 │ 0.2 µs │     60 │ 0.3 µs │     60 │ 0.3 µs │
+│ Sin    │     60 │ 0.2 µs │        │        │        │        │        │        │
+│ Div    │     58 │ 0.3 µs │     58 │ 0.2 µs │     58 │ 0.2 µs │     58 │ 0.3 µs │
+│ Total  │        │ 1.2 µs │        │ 1.2 µs │        │ 1.1 µs │        │ 6.9 µs │
+└────────┴────────┴────────┴────────┴────────┴────────┴────────┴────────┴────────┘
+
+Final value: [0.000000000000000000000000000000000000000000000000000000000000000000000000000000005, 0.00000000000000000000000000000000000000000000000000000000000000000
+0000000000000005]
+Total: 12.5 µs
+
+
+docker run --rm --network none rival-artifact   /workspace/target/release/rival-cli   "(/ (- 1 (cos x)) (sin x))" "(x)" "(1e-18)"
+Executed 5 instructions for 2 iterations:
+
+┌────────┬────────┬────────┬────────┬────────┐
+│ Name   │ 0 Bits │ 0 Time │ 1 Bits │ 1 Time │
+├────────┼────────┼────────┼────────┼────────┤
+│ adjust │        │        │        │ 0.5 µs │
+│ Cos    │     62 │ 0.3 µs │    178 │ 2.4 µs │
+│ Sub    │     60 │ 0.3 µs │     60 │ 0.2 µs │
+│ Sin    │     60 │ 0.2 µs │        │        │
+│ Div    │     58 │ 0.3 µs │     58 │ 0.3 µs │
+│ Total  │        │ 1.1 µs │        │ 3.4 µs │
+└────────┴────────┴────────┴────────┴────────┘
+
+Final value: [0.0000000000000000005, 0.0000000000000000005]
+Total: 5.7 µs
+
+
+docker run --rm --network none rival-artifact   /workspace/target/release/rival-cli   "(/ (- 1 (cos x)) (sin x))" "(x)" "(1e-26)"
+Executed 5 instructions for 3 iterations:
+
+┌────────┬────────┬────────┬────────┬────────┬────────┬────────┐
+│ Name   │ 0 Bits │ 0 Time │ 1 Bits │ 1 Time │ 2 Bits │ 2 Time │
+├────────┼────────┼────────┼────────┼────────┼────────┼────────┤
+│ adjust │        │        │        │ 0.4 µs │        │ 0.5 µs │
+│ Cos    │     62 │ 0.3 µs │    178 │ 2.6 µs │    236 │ 2.8 µs │
+│ Sub    │     60 │ 0.3 µs │     60 │ 0.3 µs │     60 │ 0.3 µs │
+│ Sin    │     60 │ 0.2 µs │        │        │        │        │
+│ Div    │     58 │ 0.4 µs │     58 │ 0.2 µs │     58 │ 0.3 µs │
+│ Total  │        │ 1.2 µs │        │ 3.5 µs │        │ 4.0 µs │
+└────────┴────────┴────────┴────────┴────────┴────────┴────────┘
+
+Final value: [0.000000000000000000000000005, 0.000000000000000000000000005]
+Total: 10.6 µs
+
