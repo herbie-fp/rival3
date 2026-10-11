@@ -403,10 +403,20 @@ Total: 12.5 µs
 The final decimal interval is very long; both endpoints are approximately
 `5e-81`.
 
+### Case studies
 
+#### Slack mechanism
 
-Additionally, you may want to run Case Studies (Slack Mechanism)
-docker run --rm --network none rival-artifact   /workspace/target/release/rival-cli   "(- (cos x) (cos (+ x eps)))" "(x eps)" "(1e100 1e-100)"
+This example evaluates `cos(x) - cos(x + eps)` with a very large `x` and a
+very small `eps` causing a catastrophic cancellation.
+
+```sh
+docker run --rm --network none rival-artifact \
+  /workspace/target/release/rival-cli \
+  "(- (cos x) (cos (+ x eps)))" "(x eps)" "(1e100 1e-100)"
+```
+
+```text
 Executed 4 instructions for 4 iterations:
 
 ┌────────┬────────┬────────┬────────┬─────────┬────────┬─────────┬────────┬─────────┐
@@ -422,10 +432,20 @@ Executed 4 instructions for 4 iterations:
 
 Final value: [-0.00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003806377310050287, -0.00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003806377310050287]
 Total: 74.1 µs
+```
 
+#### Correct rounding
 
-This is case studies on Correct rounding:
-docker run --rm --network none rival-artifact   /workspace/target/release/rival-cli   "(* (+ x y) (+ z 1))" "(x y z)" "(1.3002052657264033e189  3.084776002356433e188 9.332636e-302)"
+This example evaluates `(x + y) × (z + 1)` with inputs that cause double rounding.
+
+```sh
+docker run --rm --network none rival-artifact \
+  /workspace/target/release/rival-cli \
+  "(* (+ x y) (+ z 1))" "(x y z)" \
+  "(1.3002052657264033e189  3.084776002356433e188 9.332636e-302)"
+```
+
+```text
 Executed 4 instructions for 7 iterations:
 
 ┌────────┬────────┬────────┬────────┬────────┬────────┬────────┬────────┬────────┬────────┬────────┬────────┬────────┬────────┬────────┐
@@ -440,3 +460,4 @@ Executed 4 instructions for 7 iterations:
 
 Final value: 1608682865962046700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 Total: 10.1 µs
+```
