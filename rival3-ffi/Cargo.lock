@@ -298,7 +298,6 @@ version = "0.1.0"
 dependencies = [
  "cbindgen",
  "gmp-mpfr-sys",
- "libc",
  "rival3",
  "rug",
 ]

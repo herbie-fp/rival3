@@ -94,30 +94,29 @@
 
 (define-ffi-definer define-rival (ffi-lib _lib-path))
 
-(define _rival-error (_enum '(ok = 0 invalid_input = -1 unsamplable = -2) _int32))
-(define _analyze-result (_list-struct _rival-error _stdbool _stdbool _stdbool _pointer))
-(define _profile-summary (_list-struct _pointer _size _uint32 _uint32))
-(define _execution-record (_list-struct _int32 _uint32 _double _uint32))
-(define execution-record-size (ctype-sizeof _execution-record))
-(define _aggregated-entry (_list-struct _int32 _uint32 _double _size))
-(define aggregated-entry-size (ctype-sizeof _aggregated-entry))
+(define abi-version 3)
+(define-rival rival_abi_version (_fun -> _uint32))
+(let ([v (rival_abi_version)])
+  (unless (= v abi-version)
+    (error 'rival3 "ABI version mismatch: expected ~a, got ~a" abi-version v)))
 
-(define _rival-profiling-mode (_enum '(off = 0 on = 1) _uint32))
+(define _rival-error (_enum '(ok = 0 invalid_input = -1 unsamplable = -2 misuse = -3) _int32))
+(define _execution-record (_list-struct _int32 _uint32 _double _uint32))
+
 (define _rival-strategy (_enum '(adaptive = 0 baseline = 1) _uint32))
+(define _rival-output-policy (_enum '(require_all = 0 allow_partial = 1) _uint32))
 (define _rival-disc-type (_enum '(bool = 0 f32 = 1 f64 = 2) _uint32))
+;; Out-parameters are left unset on error, so accept any value here.
+(define _rival-analysis (_enum '(valid = 0 maybe_invalid = 1 invalid = 2) _uint32 #:unknown values))
 
 (define RIVAL_EXPR_INVALID #xFFFFFFFF)
 
-(define-rival rival_version (_fun -> _uint32))
-(define-rival rival_disc_f64 (_fun _uint32 -> _pointer))
-(define-rival rival_disc_f32 (_fun _uint32 -> _pointer))
-(define-rival rival_disc_bool (_fun -> _pointer))
-(define-rival rival_disc_mixed
-              (_fun (types : (_list i _rival-disc-type)) (_size = (length types)) _uint32 -> _pointer))
-(define-rival rival_disc_free (_fun _pointer -> _void))
-
 (define-rival rival_expr_builder_new
-              (_fun (vars : (_list i _string)) (_size = (length vars)) -> _pointer))
+              (_fun (vars : (_list i _string))
+                    (_size = (length vars))
+                    (out : (_ptr o _pointer))
+                    -> (status : _rival-error)
+                    -> (values status out)))
 (define-rival rival_expr_builder_free (_fun _pointer -> _void))
 
 (define-rival rival_expr_var (_fun _pointer _string -> _uint32))
@@ -126,60 +125,79 @@
 (define-rival rival_expr_bigrational (_fun _pointer _string _string -> _uint32))
 (define-rival rival_expr_pi (_fun _pointer -> _uint32))
 (define-rival rival_expr_e (_fun _pointer -> _uint32))
+(define-rival rival_expr_infinity (_fun _pointer -> _uint32))
 
 (define-rival rival_expr_unary (_fun _pointer _uint32 _uint32 -> _uint32))
-(define-rival rival_expr_unary_param (_fun _pointer _uint32 _uint64 _uint32 -> _uint32))
+(define-rival rival_expr_unary_param (_fun _pointer _uint32 _uint32 _uint32 -> _uint32))
 (define-rival rival_expr_binary (_fun _pointer _uint32 _uint32 _uint32 -> _uint32))
 (define-rival rival_expr_ternary (_fun _pointer _uint32 _uint32 _uint32 _uint32 -> _uint32))
+
+(define-rival rival_machine_options_new
+              (_fun (out : (_ptr o _pointer)) -> (status : _rival-error) -> (values status out)))
+(define-rival rival_machine_options_free (_fun _pointer -> _void))
+(define-rival rival_machine_options_set_target_precision (_fun _pointer _uint32 -> _rival-error))
+(define-rival rival_machine_options_set_max_precision (_fun _pointer _uint32 -> _rival-error))
+(define-rival rival_machine_options_set_profile_capacity (_fun _pointer _size -> _rival-error))
+(define-rival rival_machine_options_set_strategy (_fun _pointer _rival-strategy -> _rival-error))
 
 (define-rival rival_machine_new
               (_fun _pointer
                     (handles : (_list i _uint32))
+                    (types : (_list i _rival-disc-type))
                     (_size = (length handles))
                     _pointer
-                    _uint32
-                    _size
-                    _rival-strategy
-                    -> _pointer))
+                    (out : (_ptr o _pointer))
+                    -> (status : _rival-error)
+                    -> (values status out)))
 (define-rival rival_machine_free (_fun _pointer -> _void))
 (define-rival rival_machine_instruction_count (_fun _pointer -> _size))
 (define-rival rival_machine_iterations (_fun _pointer -> _uint32))
 (define-rival rival_machine_bumps (_fun _pointer -> _uint32))
-(define-rival rival_machine_set_profiling (_fun _pointer _rival-profiling-mode -> _void))
-(define-rival rival_machine_get_profiling (_fun _pointer -> _rival-profiling-mode))
+(define-rival rival_machine_set_profiling (_fun _pointer _stdbool -> _rival-error))
+(define-rival rival_machine_get_profiling (_fun _pointer -> _stdbool))
 
 (define _apply-fun
-  (_fun _pointer _pointer _size _pointer _size _pointer _size _stdbool -> _rival-error))
-(define-rival rival_apply _apply-fun)
-(define-rival rival_apply_f64 _apply-fun)
+  (_fun _pointer _pointer _size _pointer _uint32 _rival-output-policy _pointer _size -> _rival-error))
+(define-rival rival_machine_apply _apply-fun)
+(define-rival rival_machine_apply_f64 _apply-fun)
 
-(define-rival rival_analyze_with_hints
-              (_fun _pointer _pointer _size _pointer _stdbool -> _analyze-result))
+(define-rival rival_machine_analyze
+              (_fun _pointer
+                    _pointer
+                    _size
+                    _pointer
+                    _rival-output-policy
+                    (analysis : (_ptr o _rival-analysis))
+                    (converged : (_ptr o _stdbool))
+                    (hints : (_ptr o _pointer))
+                    -> (status : _rival-error)
+                    -> (values status analysis converged hints)))
 
 (define-rival rival_hints_free (_fun _pointer -> _void))
-(define-rival rival_hints_len (_fun _pointer -> _size))
 
-(define-rival rival_profiler_reset (_fun _pointer -> _void))
-(define-rival rival_profiler_aggregate (_fun _pointer _uint32 -> _profile-summary))
-(define-rival rival_profiler_executions
-              (_fun _pointer (out : (_ptr o _size)) -> (ptr : _pointer) -> (values ptr out)))
+(define-rival rival_machine_profiler_reset (_fun _pointer -> _void))
+(define-rival rival_machine_profiler_executions
+              (_fun _pointer
+                    _pointer
+                    _size
+                    (len : (_ptr o _size))
+                    -> (status : _rival-error)
+                    -> (values status len)))
 
-(define-rival rival_instruction_names
-              (_fun _pointer (out : (_ptr o _size)) -> (ptr : _pointer) -> (values ptr out)))
+(define-rival rival_machine_instruction_names
+              (_fun _pointer
+                    (names : (_ptr o _pointer))
+                    (len : (_ptr o _size))
+                    -> (status : _rival-error)
+                    -> (values status names len)))
 
-(let ([v (rival_version)])
-  (unless (= v 3)
-    (error 'rival3 "ABI version mismatch: expected 3, got ~a" v)))
-
-;; A finalizer frees the native object, so pass foreign calls the wrapper, not its
-;; pointer, and keep the wrapper reachable while reading native memory it owns.
 (struct machine-wrapper
-        ([ptr #:mutable] n-vars n-exprs n-instrs discs arg-buf arg-bfs out-buf out-bfs rect-buf
-                         rect-bfs name-table f64-arg-buf f64-out-buf)
+        ([ptr #:mutable] n-vars n-exprs discs arg-buf arg-bfs out-buf out-bfs rect-buf rect-bfs
+                         name-table f64-arg-buf f64-out-buf exec-buf exec-capacity)
   #:property prop:cpointer
   (lambda (wrapper) (machine-wrapper-ptr wrapper)))
 
-(struct hints-wrapper ([ptr #:mutable] len)
+(struct hints-wrapper ([ptr #:mutable] machine)
   #:property prop:cpointer
   (lambda (wrapper) (hints-wrapper-ptr wrapper)))
 
@@ -197,7 +215,7 @@
                         (lambda (discs) (= (length discs) (length exprs))))])
          [machine rival-machine?]))
 
-(define profile-key/c (or/c 'instructions 'iterations 'bumps 'executions 'summary))
+(define profile-key/c (or/c 'instructions 'iterations 'bumps 'executions))
 
 (define (machine-destroy wrapper)
   (define ptr (machine-wrapper-ptr wrapper))
@@ -210,11 +228,6 @@
   (when ptr
     (set-hints-wrapper-ptr! wrapper #f)
     (rival_hints_free ptr)))
-
-(define (bytes-from-ptr ptr len)
-  (define b (make-bytes len))
-  (memcpy b ptr len)
-  b)
 
 ;; Operator names in Rival expressions, mapped to the codes of the Rust enums in
 ;; rival3-ffi/src/expr.rs.
@@ -273,9 +286,12 @@
       [(or 'E '(E)) (rival_expr_e builder)]
       [(or 'TRUE '(TRUE)) (rival_expr_f64 builder 1.0)]
       [(or 'FALSE '(FALSE)) (rival_expr_f64 builder 0.0)]
-      [(or 'INFINITY '(INFINITY)) (rival_expr_f64 builder +inf.0)]
+      [(or 'INFINITY '(INFINITY)) (rival_expr_infinity builder)]
       [(or 'NAN '(NAN)) (rival_expr_f64 builder +nan.0)]
       [(? symbol?) (rival_expr_var builder (symbol->string expr))]
+      [(? exact-integer?)
+       #:when (< (abs expr) (expt 2 53))
+       (rival_expr_f64 builder (exact->inexact expr))]
       [(? exact-integer?) (rival_expr_bigint builder (number->string expr))]
       [(and (? rational?) (? exact?))
        (rival_expr_bigrational builder
@@ -305,21 +321,14 @@
 
   compile)
 
-(define (disc->ffi disc)
-  (case (discretization-type disc)
-    [(bool) (rival_disc_bool)]
-    [(f32) (rival_disc_f32 (discretization-target disc))]
-    [(f64) (rival_disc_f64 (discretization-target disc))]))
-
-(define (discs->ffi discs)
+(define (discs-target discs who)
   (cond
-    [(null? discs) (rival_disc_f64 53)]
-    [(= (length discs) 1) (disc->ffi (car discs))]
+    [(null? discs) 53]
     [else
      (define target (discretization-target (car discs)))
      (unless (andmap (lambda (d) (= (discretization-target d) target)) (cdr discs))
-       (error 'rival-compile "All discretizations must have the same target"))
-     (rival_disc_mixed (map discretization-type discs) target)]))
+       (error who "All discretizations must have the same target"))
+     target]))
 
 (define (rival-compile exprs vars discs)
   (compile-inner exprs vars discs 'adaptive 'rival-compile))
@@ -327,60 +336,76 @@
 (define (baseline-compile exprs vars discs)
   (compile-inner exprs vars discs 'baseline 'baseline-compile))
 
+(define (make-machine-options who target max-precision profile-capacity strategy)
+  (define-values (status options) (rival_machine_options_new))
+  (unless (eq? status 'ok)
+    (raise-arguments-error who "Rival could not allocate machine options"))
+  (define (set-option! setter what value)
+    (unless (eq? (setter options value) 'ok)
+      (rival_machine_options_free options)
+      (raise-arguments-error who (string-append "Rival rejected the " what) what value)))
+  (set-option! rival_machine_options_set_target_precision "target precision" target)
+  (set-option! rival_machine_options_set_max_precision "max precision" max-precision)
+  (set-option! rival_machine_options_set_profile_capacity "profile capacity" profile-capacity)
+  (set-option! rival_machine_options_set_strategy "strategy" strategy)
+  options)
+
 (define (compile-inner exprs vars discs strategy error-name)
   (define n-vars (length vars))
   (define n-exprs (length exprs))
+  (define target (discs-target discs error-name))
   (define max-precision (*rival-max-precision*))
+  (define profile-capacity (*rival-profile-executions*))
 
-  (define builder (rival_expr_builder_new (map symbol->string vars)))
-  (unless builder
-    (error error-name "Failed to create expression builder"))
+  (define options
+    (make-machine-options error-name target max-precision profile-capacity strategy))
+  (define-values (builder-status builder) (rival_expr_builder_new (map symbol->string vars)))
+  (unless (eq? builder-status 'ok)
+    (rival_machine_options_free options)
+    (raise-arguments-error error-name "Rival rejected the variables" "vars" vars))
 
-  (define machine-ptr
+  (define-values (machine-status machine-ptr)
     (dynamic-wind void
                   (lambda ()
                     (define compile-expr (make-expr-compiler builder))
                     (define expr-handles (map compile-expr exprs))
-                    (define disc-ptr (discs->ffi discs))
-                    (begin0 (rival_machine_new builder
-                                               expr-handles
-                                               disc-ptr
-                                               max-precision
-                                               (*rival-profile-executions*)
-                                               strategy)
-                            (rival_disc_free disc-ptr)))
-                  (lambda () (rival_expr_builder_free builder))))
+                    (rival_machine_new builder expr-handles (map discretization-type discs) options))
+                  (lambda ()
+                    (rival_expr_builder_free builder)
+                    (rival_machine_options_free options))))
 
-  (unless machine-ptr
-    (error error-name "Failed to create machine"))
+  (unless (eq? machine-status 'ok)
+    (raise-arguments-error error-name "Rival rejected the expressions" "exprs" exprs))
 
   (define arg-buf (malloc _pointer n-vars 'atomic-interior))
   (define out-buf (malloc _pointer n-exprs 'atomic-interior))
   (define rect-buf (malloc _pointer (* 2 n-vars) 'atomic-interior))
   (define f64-arg-buf (malloc _double n-vars 'atomic-interior))
   (define f64-out-buf (malloc _double n-exprs 'atomic-interior))
+  (define exec-buf (malloc _execution-record profile-capacity 'atomic-interior))
 
   (define arg-bfs (make-vector n-vars #f))
   (define rect-bfs (make-vector (* 2 n-vars) #f))
 
+  ;; Rival writes outputs already rounded to their type, so a double's precision holds them.
   (define out-bfs
-    (parameterize ([bf-precision max-precision])
+    (parameterize ([bf-precision 53])
       (build-vector n-exprs (lambda (_) (bf 0.0)))))
   (for ([i (in-range n-exprs)]
         [x (in-vector out-bfs)])
     (ptr-set! out-buf _mpfr-pointer i x))
 
-  (define-values (names-ptr names-len) (rival_instruction_names machine-ptr))
+  (define-values (names-status names-ptr names-len) (rival_machine_instruction_names machine-ptr))
+  (check-ok! error-name names-status exprs)
   (define name-table
-    (if (and names-ptr (> names-len 0))
-        (list->vector (string-split (bytes->string/utf-8 (bytes-from-ptr names-ptr names-len)) "\0"))
-        (vector)))
+    (for/vector #:length names-len
+                ([i (in-range names-len)])
+      (ptr-ref names-ptr _string i)))
 
   (define wrapper
     (machine-wrapper machine-ptr
                      n-vars
                      n-exprs
-                     (rival_machine_instruction_count machine-ptr)
                      discs
                      arg-buf
                      arg-bfs
@@ -390,7 +415,9 @@
                      rect-bfs
                      name-table
                      f64-arg-buf
-                     f64-out-buf))
+                     f64-out-buf
+                     exec-buf
+                     profile-capacity))
   (register-finalizer wrapper machine-destroy)
   wrapper)
 
@@ -404,21 +431,20 @@
                            n)))
 
 (define (check-hints! who machine hints)
-  (when (and hints (not (= (hints-wrapper-len hints) (machine-wrapper-n-instrs machine))))
-    (raise-arguments-error who
-                           "hints do not belong to this machine"
-                           "expected"
-                           (machine-wrapper-n-instrs machine)
-                           "given"
-                           (hints-wrapper-len hints))))
+  (when (and hints (not (eq? (hints-wrapper-machine hints) machine)))
+    (raise-arguments-error who "hints do not belong to this machine")))
 
 (define (raise-result-code who code pt)
   (match code
     ['invalid_input (raise (exn:rival:invalid "Invalid input" (current-continuation-marks) pt))]
     ['unsamplable (raise (exn:rival:unsamplable "Unsamplable input" (current-continuation-marks) pt))]
-    [_ (error who "Unknown result code: ~a" code)]))
+    ['misuse (raise-arguments-error who "Rival rejected the arguments" "input" pt)]))
 
-(define (apply-inner machine pt hints require-all? error-name)
+(define (check-ok! who code input)
+  (unless (eq? code 'ok)
+    (raise-result-code who code input)))
+
+(define (apply-inner machine pt hints policy error-name)
   (define n-args (vector-length pt))
   (check-arity! error-name "point" machine n-args)
   (check-hints! error-name machine hints)
@@ -432,10 +458,10 @@
   (define n-outs (machine-wrapper-n-exprs machine))
   (define out-bfs (machine-wrapper-out-bfs machine))
   (define out-ptrs (machine-wrapper-out-buf machine))
-  (define status-code
-    (rival_apply machine arg-ptrs n-args out-ptrs n-outs hints (*rival-max-iterations*) require-all?))
-  (unless (eq? status-code 'ok)
-    (raise-result-code error-name status-code pt))
+  (check-ok!
+   error-name
+   (rival_machine_apply machine arg-ptrs n-args hints (*rival-max-iterations*) policy out-ptrs n-outs)
+   pt)
   (define discs (machine-wrapper-discs machine))
   (for/vector #:length n-outs
               ([bf (in-vector out-bfs)]
@@ -444,7 +470,7 @@
         'invalid
         ((discretization-convert disc) bf))))
 
-(define (apply-f64-inner machine pt hints require-all? error-name)
+(define (apply-f64-inner machine pt hints policy error-name)
   (define n-args (vector-length pt))
   (check-arity! error-name "point" machine n-args)
   (check-hints! error-name machine hints)
@@ -454,10 +480,10 @@
     (ptr-set! args _double i (input->double arg)))
   (define n-outs (machine-wrapper-n-exprs machine))
   (define outs (machine-wrapper-f64-out-buf machine))
-  (define status-code
-    (rival_apply_f64 machine args n-args outs n-outs hints (*rival-max-iterations*) require-all?))
-  (unless (eq? status-code 'ok)
-    (raise-result-code error-name status-code pt))
+  (check-ok!
+   error-name
+   (rival_machine_apply_f64 machine args n-args hints (*rival-max-iterations*) policy outs n-outs)
+   pt)
   (define discs (machine-wrapper-discs machine))
   (for/vector #:length n-outs
               ([i (in-range n-outs)]
@@ -469,24 +495,24 @@
       [else x])))
 
 (define (rival-apply machine pt [hints #f])
-  (apply-inner machine pt hints #t 'rival-apply))
+  (apply-inner machine pt hints 'require_all 'rival-apply))
 
 (define (rival-apply/partial machine pt [hints #f])
-  (apply-inner machine pt hints #f 'rival-apply/partial))
+  (apply-inner machine pt hints 'allow_partial 'rival-apply/partial))
 
 (define (rival-apply/f64 machine pt [hints #f])
-  (apply-f64-inner machine pt hints #t 'rival-apply/f64))
+  (apply-f64-inner machine pt hints 'require_all 'rival-apply/f64))
 
 (define (rival-apply/f64/partial machine pt [hints #f])
-  (apply-f64-inner machine pt hints #f 'rival-apply/f64/partial))
+  (apply-f64-inner machine pt hints 'allow_partial 'rival-apply/f64/partial))
 
 (define (baseline-apply machine pt [hints #f])
-  (apply-inner machine pt hints #t 'baseline-apply))
+  (apply-inner machine pt hints 'require_all 'baseline-apply))
 
 (define (baseline-apply/partial machine pt [hints #f])
-  (apply-inner machine pt hints #f 'baseline-apply/partial))
+  (apply-inner machine pt hints 'allow_partial 'baseline-apply/partial))
 
-(define (analyze-inner machine rect hint require-all? keep-hints? error-name)
+(define (analyze-inner machine rect hint policy keep-hints? error-name)
   (define n-args (vector-length rect))
   (check-arity! error-name "rectangle" machine n-args)
   (check-hints! error-name machine hint)
@@ -500,46 +526,48 @@
     (vector-set! rect-bfs (+ (* 2 i) 1) hi)
     (ptr-set! rect-ptrs _mpfr-pointer (* 2 i) lo)
     (ptr-set! rect-ptrs _mpfr-pointer (+ (* 2 i) 1) hi))
-  (match-define (list status-code is-error maybe-error converged hints-ptr)
-    (rival_analyze_with_hints machine rect-ptrs n-args hint require-all?))
-  (match status-code
-    ['ok (void)]
-    [else (error error-name "Unknown result code: ~a" status-code)])
+  (define-values (status-code analysis converged hints-ptr)
+    (rival_machine_analyze machine rect-ptrs n-args hint policy))
+  (check-ok! error-name status-code rect)
   (define new-hints
     (cond
-      [(not hints-ptr) #f]
       [keep-hints?
-       (define wrapper (hints-wrapper hints-ptr (rival_hints_len hints-ptr)))
+       (define wrapper (hints-wrapper hints-ptr machine))
        (register-finalizer wrapper hints-destroy)
        wrapper]
       [else
        (rival_hints_free hints-ptr)
        #f]))
-  (list (ival is-error maybe-error) new-hints converged))
+  (define status
+    (match analysis
+      ['valid (ival #f #f)]
+      ['maybe_invalid (ival #f #t)]
+      ['invalid (ival #t #t)]))
+  (list status new-hints converged))
 
 (define (rival-analyze-with-hints machine rect [hint #f])
-  (analyze-inner machine rect hint #t #t 'rival-analyze-with-hints))
+  (analyze-inner machine rect hint 'require_all #t 'rival-analyze-with-hints))
 
 (define (rival-analyze-with-hints/partial machine rect [hint #f])
-  (analyze-inner machine rect hint #f #t 'rival-analyze-with-hints/partial))
+  (analyze-inner machine rect hint 'allow_partial #t 'rival-analyze-with-hints/partial))
 
 (define (rival-analyze machine rect)
-  (car (analyze-inner machine rect #f #t #f 'rival-analyze)))
+  (car (analyze-inner machine rect #f 'require_all #f 'rival-analyze)))
 
 (define (rival-analyze/partial machine rect)
-  (car (analyze-inner machine rect #f #f #f 'rival-analyze/partial)))
+  (car (analyze-inner machine rect #f 'allow_partial #f 'rival-analyze/partial)))
 
 (define (baseline-analyze-with-hints machine rect [hint #f])
-  (analyze-inner machine rect hint #t #t 'baseline-analyze-with-hints))
+  (analyze-inner machine rect hint 'require_all #t 'baseline-analyze-with-hints))
 
 (define (baseline-analyze-with-hints/partial machine rect [hint #f])
-  (analyze-inner machine rect hint #f #t 'baseline-analyze-with-hints/partial))
+  (analyze-inner machine rect hint 'allow_partial #t 'baseline-analyze-with-hints/partial))
 
 (define (baseline-analyze machine rect)
-  (car (analyze-inner machine rect #f #t #f 'baseline-analyze)))
+  (car (analyze-inner machine rect #f 'require_all #f 'baseline-analyze)))
 
 (define (baseline-analyze/partial machine rect)
-  (car (analyze-inner machine rect #f #f #f 'baseline-analyze/partial)))
+  (car (analyze-inner machine rect #f 'allow_partial #f 'baseline-analyze/partial)))
 
 (define (instruction-name names instr-idx)
   (cond
@@ -553,38 +581,18 @@
     ['iterations (rival_machine_iterations machine)]
     ['bumps (rival_machine_bumps machine)]
     ['executions
-     (define-values (ptr len) (rival_profiler_executions machine))
-     (cond
-       [(or (not ptr) (zero? len)) (vector)]
-       [else
-        (define names (machine-wrapper-name-table machine))
-        (begin0 (for/vector #:length len
-                            ([i (in-range len)])
-                  (define rec-ptr (ptr-add ptr (* i execution-record-size)))
-                  (match-define (list instr-idx prec time-ms iter)
-                    (ptr-ref rec-ptr _execution-record))
-                  (execution (instruction-name names instr-idx) instr-idx prec time-ms 0 iter))
-                (void/reference-sink machine))])]
-    ['summary
-     (define bucket-size (max 1 (quotient (*rival-max-precision*) 25)))
-     (match-define (list entries-ptr entries-len bumps iterations)
-       (rival_profiler_aggregate machine bucket-size))
+     (define buf (machine-wrapper-exec-buf machine))
+     (define capacity (machine-wrapper-exec-capacity machine))
+     (define-values (status len) (rival_machine_profiler_executions machine buf capacity))
+     (check-ok! 'rival-profile status param)
      (define names (machine-wrapper-name-table machine))
-     (define summary
-       (if (or (not entries-ptr) (zero? entries-len))
-           (vector)
-           (for/vector #:length entries-len
-                       ([i (in-range entries-len)])
-             (define entry-ptr (ptr-add entries-ptr (* i aggregated-entry-size)))
-             (match-define (list instr-idx prec-bucket time-ms count)
-               (ptr-ref entry-ptr _aggregated-entry))
-             (list (instruction-name names instr-idx) prec-bucket time-ms count))))
-     (void/reference-sink machine)
-     (list summary bumps iterations)]))
+     (for/vector #:length (min len capacity)
+                 ([i (in-range (min len capacity))])
+       (match-define (list instr-idx prec time-ms iter) (ptr-ref buf _execution-record i))
+       (execution (instruction-name names instr-idx) instr-idx prec time-ms 0 iter))]))
 
 (define (rival-set-profiling! machine enabled)
-  (rival_machine_set_profiling machine (if enabled 'on 'off)))
+  (check-ok! 'rival-set-profiling! (rival_machine_set_profiling machine enabled) enabled))
 
 (define (rival-profiling-enabled? machine)
-  (eq? (rival_machine_get_profiling machine) 'on))
-
+  (rival_machine_get_profiling machine))

@@ -1,16 +1,34 @@
 use rug::{
     Assign, Float,
     float::{OrdFloat, Round},
-    ops::AssignRound,
+    ops::{AssignRound, NegAssign},
 };
 
 use crate::mpfr::zero;
-use rug::ops::NegAssign;
+use std::mem;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub(crate) struct Endpoint {
     pub(crate) val: OrdFloat,
     pub(crate) immovable: bool,
+}
+
+impl Clone for Endpoint {
+    fn clone(&self) -> Self {
+        Endpoint {
+            val: self.val.clone(),
+            immovable: self.immovable,
+        }
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        if source.as_float().is_nan() {
+            *self = source.clone();
+            return;
+        }
+        self.as_float_mut().clone_from(source.as_float());
+        self.immovable = source.immovable;
+    }
 }
 
 /// A standard Rival interval containing two arbitrary-precision endpoints.
@@ -65,11 +83,27 @@ pub(crate) struct Endpoint {
 /// support for *movability flags* that can detect many such instances
 /// automatically. Movability flags are correctly propagated by all of
 /// Rival's supported operations, and are set by functions such as `exp`.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Ival {
     pub(crate) lo: Endpoint,
     pub(crate) hi: Endpoint,
     pub(crate) err: ErrorFlags,
+}
+
+impl Clone for Ival {
+    fn clone(&self) -> Self {
+        Ival {
+            lo: self.lo.clone(),
+            hi: self.hi.clone(),
+            err: self.err,
+        }
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        self.lo.clone_from(&source.lo);
+        self.hi.clone_from(&source.hi);
+        self.err = source.err;
+    }
 }
 
 /// Flags indicating whether invalid inputs were discarded during computation.
@@ -191,7 +225,7 @@ impl Ival {
     pub(crate) fn neg_inplace(&mut self) {
         self.lo.as_float_mut().neg_assign();
         self.hi.as_float_mut().neg_assign();
-        std::mem::swap(&mut self.lo, &mut self.hi);
+        mem::swap(&mut self.lo, &mut self.hi);
     }
 
     /// Construct an interval from two endpoints.

@@ -24,6 +24,13 @@ pub struct Expression {
     register: usize,
 }
 
+impl Expression {
+    /// Return the position of this expression in its builder.
+    pub fn index(self) -> usize {
+        self.register
+    }
+}
+
 /// Incrementally builds a shared expression graph.
 ///
 /// Rival supports a simple language of real-number expressions containing
@@ -101,6 +108,15 @@ impl ExpressionBuilder {
         self.variables.get(name).copied()
     }
 
+    /// Look up an expression by its [`Expression::index`].
+    pub fn expression(&self, index: usize) -> Option<Expression> {
+        let expression = Expression {
+            builder: self.id,
+            register: index,
+        };
+        self.contains(expression).then_some(expression)
+    }
+
     /// Add a floating-point literal.
     pub fn literal(&mut self, value: Float) -> Expression {
         self.insert(InstructionData::literal(value))
@@ -108,6 +124,11 @@ impl ExpressionBuilder {
 
     /// Add an exact rational literal.
     pub fn rational(&mut self, value: Rational) -> Expression {
+        if *value.denom() == 1 {
+            let (integer, _) = value.into_numer_denom();
+            let precision = integer.significant_bits().max(f64::MANTISSA_DIGITS);
+            return self.literal(Float::with_val(precision, integer));
+        }
         self.insert(InstructionData::rational(value))
     }
 
@@ -119,6 +140,11 @@ impl ExpressionBuilder {
     /// Add e.
     pub fn e(&mut self) -> Expression {
         self.insert(InstructionData::constant(ConstantOp::E))
+    }
+
+    /// Add infinity.
+    pub fn infinity(&mut self) -> Expression {
+        self.insert(InstructionData::constant(ConstantOp::Infinity))
     }
 
     /// Return the number of input arguments.

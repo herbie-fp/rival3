@@ -11,7 +11,6 @@ crate-type = ["cdylib", "staticlib"]
 rival = { path = "..", package = "rival3" }
 gmp-mpfr-sys = "1.6"
 rug = "1.28"
-libc = "0.2"
 
 [build-dependencies]
 cbindgen = "0.29"

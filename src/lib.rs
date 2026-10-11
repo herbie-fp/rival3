@@ -18,16 +18,16 @@
 //! and then apply that machine to specific inputs.
 //!
 //! ```no_run
-//! use rival::{ExpressionBuilder, MachineBuilder, Ival};
+//! use rival::{Discretization, ExpressionBuilder, MachineBuilder};
 //! use rug::Float;
 //!
+//! #[derive(Clone)]
 //! struct Fp64Disc;
-//! impl rival::Discretization for Fp64Disc {
+//! impl Discretization for Fp64Disc {
 //!     fn target(&self) -> u32 { 53 }
 //!     fn convert(&self, _: usize, v: &Float) -> Float { Float::with_val(53, v) }
 //!     fn distance(&self, _: usize, lo: &Float, hi: &Float) -> usize { 0 }
 //! }
-//! impl Clone for Fp64Disc { fn clone(&self) -> Self { Fp64Disc } }
 //!
 //! let mut expressions = ExpressionBuilder::new(["x"]);
 //! let x = expressions.variable("x").unwrap();
@@ -52,11 +52,9 @@
 //!
 //! ```
 //! use rival::Ival;
+//! use rug::Float;
 //!
-//! let x = Ival::from_lo_hi(
-//!     rug::Float::with_val(20, 2),
-//!     rug::Float::with_val(20, 3),
-//! );
+//! let x = Ival::from_lo_hi(Float::with_val(20, 2), Float::with_val(20, 3));
 //! let mut result = Ival::zero(20);
 //! result.sqrt_assign(&x);
 //! ```

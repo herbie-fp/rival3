@@ -3,6 +3,8 @@
 pub(crate) mod path_reduction;
 mod precision;
 
+use std::time::Instant;
+
 use crate::eval::{
     machine::{Discretization, Hint, Machine},
     profile::Execution,
@@ -74,7 +76,7 @@ fn backward_pass<D: Discretization>(machine: &mut Machine<D>, hints: &[Hint]) ->
     let instruction_count = machine.instructions.len();
     let profiling = machine.profiling_enabled;
     let start_time = if profiling {
-        Some(std::time::Instant::now())
+        Some(Instant::now())
     } else {
         None
     };

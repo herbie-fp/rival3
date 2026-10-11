@@ -1,7 +1,7 @@
 //! Wrappers around MPFR functions using the `rug` and `gmp_mpfr_sys` crates.
 //! Uses unsafe functions for ease of implementation, and in cases such as
 //! `exp_overflow_threshold`, for efficiency
-use std::os::raw::c_ulong;
+use std::ffi::c_ulong;
 
 use gmp_mpfr_sys::mpfr;
 use rug::Float;

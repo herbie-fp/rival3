@@ -1,6 +1,9 @@
 //! Main evaluation loop with adaptive precision tuning.
 
+use std::time::Instant;
+
 use itertools::{enumerate, izip};
+use thiserror::Error;
 
 use crate::eval::{
     execute,
@@ -188,8 +191,8 @@ impl<D: Discretization> Machine<D> {
     /// Load argument intervals into the front of the register file.
     pub(crate) fn load_arguments(&mut self, args: &[Ival]) {
         assert_eq!(args.len(), self.arguments.len(), "Argument count mismatch");
-        for (i, arg) in args.iter().cloned().enumerate() {
-            self.registers[i] = arg;
+        for (register, arg) in self.registers.iter_mut().zip(args) {
+            register.clone_from(arg);
         }
         self.bumps = 0;
         self.bumps_activated = false;
@@ -197,9 +200,7 @@ impl<D: Discretization> Machine<D> {
         self.precisions.fill(0);
         self.repeats.fill(false);
         self.output_distance.fill(false);
-        if self.profiling_enabled {
-            self.profiler.reset();
-        }
+        self.profiler.reset();
     }
 
     /// Execute instructions once using the supplied precision and hint plan.
@@ -224,7 +225,7 @@ impl<D: Discretization> Machine<D> {
                 Hint::Skip => {}
                 Hint::Execute => {
                     if self.profiling_enabled {
-                        let start = std::time::Instant::now();
+                        let start = Instant::now();
                         execute::evaluate_instruction(instruction, &mut self.registers, precision);
                         let dt = start.elapsed().as_secs_f64() * 1000.0;
                         let exec = Execution {
@@ -266,7 +267,7 @@ impl<D: Discretization> Machine<D> {
         let instruction_count = self.instructions.len();
         let profiling = self.profiling_enabled;
         let start_time = if profiling {
-            Some(std::time::Instant::now())
+            Some(Instant::now())
         } else {
             None
         };
@@ -303,7 +304,7 @@ impl<D: Discretization> Machine<D> {
             }
 
             // Set repeats and update constant precisions.
-            for idx in 0..instruction_count {
+            for (idx, &is_useful) in useful.iter().enumerate() {
                 let is_constant = self.initial_repeats[idx];
                 let best_known = self.best_known_precisions[idx];
 
@@ -317,7 +318,7 @@ impl<D: Discretization> Machine<D> {
                 }
 
                 let no_need_to_reevaluate = is_constant && new_prec <= best_known && inputs_stable;
-                let result_is_exact_already = !useful[idx];
+                let result_is_exact_already = !is_useful;
                 let repeat = result_is_exact_already || no_need_to_reevaluate;
 
                 if is_constant && !repeat {
@@ -412,7 +413,7 @@ impl<D: Discretization> Machine<D> {
 /// that it has correctly rounded every non-error output. It only returns
 /// [`RivalError::InvalidInput`] when the selected evaluation policy proves
 /// the input invalid.
-#[derive(thiserror::Error, Debug)]
+#[derive(Error, Debug)]
 pub enum RivalError {
     /// The input point is invalid under the evaluation policy being used.
     ///

@@ -1,10 +1,8 @@
+use super::core::endpoint_unary;
 use super::value::{Endpoint, Ival, IvalClass, classify};
-use crate::{
-    interval::core::endpoint_unary,
-    mpfr::{
-        mpfr_cos, mpfr_cosu, mpfr_div, mpfr_floor_inplace, mpfr_get_exp, mpfr_pi,
-        mpfr_round_inplace, mpfr_sin, mpfr_sinu, mpfr_tan, mpfr_tanu, zero,
-    },
+use crate::mpfr::{
+    mpfr_cos, mpfr_cosu, mpfr_div, mpfr_floor_inplace, mpfr_get_exp, mpfr_pi, mpfr_round_inplace,
+    mpfr_sin, mpfr_sinu, mpfr_tan, mpfr_tanu, zero,
 };
 use rug::{Assign, Float, float::Round};
 

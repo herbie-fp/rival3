@@ -4,19 +4,19 @@ tab_width = 4
 style = "both"
 cpp_compat = true
 include_version = true
-includes = ["mpfr.h"]
+usize_is_size_t = true
+no_includes = true
+sys_includes = ["stdbool.h", "stddef.h", "stdint.h", "mpfr.h"]
 
 [export]
 include = [
-    "RivalError",
     "RivalDiscType",
     "RivalUnaryOp",
     "RivalUnaryParamOp",
     "RivalBinaryOp",
     "RivalTernaryOp",
-    "RivalAnalyzeResult",
-    "RivalExecution",
     "RivalStrategy",
+    "RivalOutputPolicy",
 ]
 
 [fn]

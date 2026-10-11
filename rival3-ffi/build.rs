@@ -1,3 +1,4 @@
+use cbindgen::{Builder, Config};
 use std::env;
 use std::fs;
 use std::path::PathBuf;
@@ -7,10 +8,9 @@ fn main() {
     let out_dir = PathBuf::from(&crate_dir).join("include");
     fs::create_dir_all(&out_dir).ok();
 
-    let config =
-        cbindgen::Config::from_file("cbindgen.toml").expect("Failed to read cbindgen.toml");
+    let config = Config::from_file("cbindgen.toml").expect("Failed to read cbindgen.toml");
 
-    cbindgen::Builder::new()
+    Builder::new()
         .with_crate(&crate_dir)
         .with_config(config)
         .generate()

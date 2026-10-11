@@ -1,8 +1,6 @@
+use super::core::endpoint_binary;
 use super::value::{Endpoint, Ival, IvalClass, classify};
-use crate::{
-    interval::core::endpoint_binary,
-    mpfr::{mpfr_add, mpfr_div, mpfr_hypot, mpfr_mul, mpfr_sub},
-};
+use crate::mpfr::{mpfr_add, mpfr_div, mpfr_hypot, mpfr_mul, mpfr_sub};
 use rug::{Assign, Float, float::Round, ops::AssignRound};
 
 impl Ival {

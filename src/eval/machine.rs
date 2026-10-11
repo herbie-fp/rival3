@@ -4,11 +4,9 @@ use super::{
     builder::{Expression, ExpressionBuilder},
     execute,
     instructions::Instruction,
+    profile::{Execution, Profiler},
 };
-use crate::{
-    eval::profile::{Execution, Profiler},
-    interval::Ival,
-};
+use crate::interval::Ival;
 use rug::Float;
 
 /// A discretization represents some subset of the real numbers
