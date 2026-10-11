@@ -1,9 +1,9 @@
 # Rival 3
 
-Rival evaluates real expressions to high precision. This repository also
-contains the timing evaluation used to compare Rival with the baseline, Ziv,
-and Sollya evaluators. Evaluators can build and run it with Docker on Linux
-amd64; the image includes the benchmark data and required tools.
+Rival evaluates real expressions to high precision. This repository contains a
+timing evaluation comparing Rival with the Ziv+, Ziv, and Sollya evaluators.
+The artifact runs with Docker on Linux amd64; its image includes the benchmark
+data and required tools.
 
 ## Repository map
 
@@ -48,27 +48,56 @@ amd64; the image includes the benchmark data and required tools.
 | `src/interval/pow.rs` | Power operations |
 | `src/interval/trig.rs` | Trigonometric operations |
 
-Run the following commands from the repository root. You need Docker and
-enough free space to expand the benchmark input (about 460 MiB) inside the
-container. Building the image requires network access; running it does not.
+## Build the Docker image
+
+Run these commands from the repository root. You need Docker and enough space
+inside the container for the expanded benchmark input (about 460 MiB).
+Building the image requires network access; running it does not.
 
 ```sh
-docker build --platform linux/amd64 -t rival3-timing:local .
+docker build --platform linux/amd64 -t rival-artifact .
 mkdir -p result
 ```
 
-Create `result` once on your host. Both commands below mount it at
-`/output` inside the container, so the generated files remain in `result/`
-after the container exits. Each command clears top-level files from `result/`
-first, including files from a previous run. Use this directory only for
-evaluation outputs.
+The image uses these versions on Linux amd64:
 
-## Kick the tires
+| Component | Version |
+| --- | --- |
+| Ubuntu | 24.04 (base-image digest pinned) |
+| Rust | 1.88.0 |
+| Racket | 8.18 |
+| Sollya | 8.0 |
+| GMP | 6.3.0 |
+| MPFR | 4.2.1 |
+| MPFI | 1.5.3 |
+| `gmp-mpfr-sys` | 1.6.4 |
+| Python plotting libraries | NumPy 1.26.4, pandas 2.1.4, Matplotlib 3.6.3 |
+
+Evaluation commands mount `result/` directory at
+`/output` inside the container, so generated files remain in `result/` after
+the container exits.
+
+Either evaluation writes these files to `result/`:
+
+| File | Contents |
+| --- | --- |
+| `index.html` | Timing table and plots |
+| `timeline.json` | Data used to make the plots |
+| `profile.json` | Racket profiling data |
+| `*.png`, `*.pdf` | The five report plots, each in both formats |
+| `kick-the-tires.log` or `full-evaluation.log` | Progress and summary for the selected run |
+
+
+## Kick the tires (a few minutes)
+
+This runs one benchmark record (number 4) against all its points. It evaluates Rival,
+Ziv+, Ziv, and Sollya, and calculates optimal precision. The report and plots
+use only this record, so they will differ from the full evaluation.
 
 ```sh
-rm -f -- result/*
+rm -f -- result/*  # Clean up result directory
 docker run --rm --network none --mount type=bind,src="$PWD/result",dst=/output \
-  rival3-timing:local bash -lc '
+  rival-artifact bash -lc '
     set -euo pipefail
     {
       xz -dc infra/points.json.xz > /tmp/points.json
@@ -83,23 +112,21 @@ docker run --rm --network none --mount type=bind,src="$PWD/result",dst=/output \
   '
 ```
 
-This runs benchmark record `4` (the fifth record) against every point in the
-real dataset. It exercises Rival, Sollya, and the optimal precision
-calculation. Check `result/kick-the-tires.log` for the selected expression and
-the line beginning `4:`. It also writes the HTML report, profile, timeline,
-and all five plot pairs (PNG and PDF) to `result/`, using only that benchmark
-record.
+Once it's done, open `result/index.html` directly in a browser and check that
+all five plots appear. The corresponding PNG and PDF files should also be in
+`result/`. Some browsers block the profiling widget from loading local JSON
+files; the plots remain available directly as PNG and PDF files.
 
-## Full evaluation
+## Full evaluation (may take hours)
 
-Run this on native Linux amd64. It evaluates every benchmark record and then
-generates the report and plots; it can take substantially longer than the
-kick-the-tires run.
+Run this on native Linux amd64. It processes every benchmark record, evaluates
+Rival, Ziv+, Ziv, and Sollya, calculates optimal precision, and generates the
+report and plots in `result/`.
 
 ```sh
-rm -f -- result/*
+rm -f -- result/*  # Clean up result directory
 docker run --rm --network none --mount type=bind,src="$PWD/result",dst=/output \
-  rival3-timing:local bash -lc '
+  rival-artifact bash -lc '
     set -euo pipefail
     {
       xz -dc infra/points.json.xz > /tmp/points.json
@@ -114,26 +141,10 @@ docker run --rm --network none --mount type=bind,src="$PWD/result",dst=/output \
   '
 ```
 
-Either run writes these results to the host in `result/`:
-
-| File | Contents |
-| --- | --- |
-| `index.html` | Timing table and plot links |
-| `timeline.json` | Data used to make the plots |
-| `profile.json` | Racket profiling data |
-| `*.png`, `*.pdf` | The five report plots, each in both formats |
-| `kick-the-tires.log` or `full-evaluation.log` | Progress and summary for the selected run |
-
-Open `result/index.html` directly in a browser for the table and plots.
-`profile.json` is available alongside it. Some browsers block the HTML
-profiling widget from loading local JSON files. To check completion, confirm
-the run log contains the `Total Time` and `Total Memory` summary and that
-`result/index.html`, `result/timeline.json`,
-`result/profile.json`, and the five PNG/PDF pairs exist.
-
-The image includes `infra/points.json.xz` and expands it in temporary container
-storage for each run. It does not require the separate optimal precision cache.
-Dependency versions are pinned in the [Dockerfile](Dockerfile).
+Once it's done, open `result/index.html` directly in a browser and check that
+all five plots appear. The corresponding PNG and PDF files should also be in
+`result/`. Some browsers block the profiling widget from loading local JSON
+files; the plots remain available directly as PNG and PDF files.
 
 ## Try the Rust CLI
 
@@ -142,12 +153,13 @@ installing Rust or its dependencies on your host. Pass an expression, its
 variables, and their input values:
 
 ```sh
-docker run --rm --network none rival3-timing:local \
+docker run --rm --network none rival-artifact \
   /workspace/target/release/rival-cli \
   "(- (sqrt (+ x 1)) 1)" "(x)" "(1e-30)"
 ```
 
-You should see a per-instruction table like this (timings vary by machine):
+You should see a per-instruction table like this (timings and intermediate
+precisions may vary):
 
 ```text
 Executed 4 instructions for 2 iterations:
