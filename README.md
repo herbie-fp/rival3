@@ -276,15 +276,15 @@ Executed 4 instructions for 2 iterations:
 ┌────────┬────────┬────────┬────────┬────────┐
 │ Name   │ 0 Bits │ 0 Time │ 1 Bits │ 1 Time │
 ├────────┼────────┼────────┼────────┼────────┤
-│ adjust │        │        │        │ 0.5 µs │
-│ Add    │     62 │ 0.3 µs │    633 │ 0.2 µs │
-│ Sqrt   │     60 │ 0.8 µs │    632 │ 1.6 µs │
-│ Sub    │     58 │ 0.2 µs │     58 │ 0.2 µs │
-│ Total  │        │ 1.2 µs │        │ 2.6 µs │
+│ adjust │        │        │        │ 0.6 µs │
+│ Add    │     62 │ 0.5 µs │    174 │ 0.4 µs │
+│ Sqrt   │     60 │ 0.7 µs │    173 │ 1.0 µs │
+│ Sub    │     58 │ 0.3 µs │     58 │ 0.3 µs │
+│ Total  │        │ 1.5 µs │        │ 2.3 µs │
 └────────┴────────┴────────┴────────┴────────┘
 
 Final value: [0.0000000000000000000000000000005, 0.0000000000000000000000000000005]
-Total: 5.2 µs
+Total: 5.6 µs
 ```
 
 The `Bits` columns show the precision used for each instruction in each
