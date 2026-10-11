@@ -42,7 +42,8 @@ COPY . /workspace
 
 # Compile the Racket FFI and CLI once at build time. The data remains compressed
 # in the image and is expanded only into /tmp while an evaluation is running.
-RUN make install
+RUN cargo build --release --locked --manifest-path=rival3-ffi/Cargo.toml \
+ && make install
 RUN cargo build --release --locked --bin rival-cli
 
 CMD ["bash"]
