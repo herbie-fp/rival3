@@ -81,19 +81,15 @@ impl ExpressionBuilder {
     {
         let id = NEXT_BUILDER_ID.fetch_add(1, Ordering::Relaxed);
         let arguments: Vec<String> = arguments.into_iter().map(Into::into).collect();
-        let variables = arguments
-            .iter()
-            .enumerate()
-            .map(|(register, name)| {
-                (
-                    name.clone(),
-                    Expression {
-                        builder: id,
-                        register,
-                    },
-                )
-            })
-            .collect();
+        let mut variables = HashMap::new();
+        for (register, name) in arguments.iter().enumerate() {
+            let expression = Expression {
+                builder: id,
+                register,
+            };
+            let previous = variables.insert(name.clone(), expression);
+            assert!(previous.is_none(), "duplicate argument name `{name}`");
+        }
 
         Self {
             id,

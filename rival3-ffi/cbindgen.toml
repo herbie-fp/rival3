@@ -1,7 +1,7 @@
 language = "C"
 include_guard = "RIVAL3_FFI_H"
 tab_width = 4
-style = "both"
+style = "type"
 cpp_compat = true
 include_version = true
 usize_is_size_t = true

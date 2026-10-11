@@ -4,6 +4,7 @@ use crate::{
 use num_enum::TryFromPrimitive;
 use rival::{Expression, ExpressionBuilder};
 use rug::{Float, Integer, Rational};
+use std::collections::HashSet;
 use std::ffi::{CStr, c_char};
 
 pub type RivalExpr = u32;
@@ -62,6 +63,12 @@ pub unsafe extern "C" fn rival_expr_builder_new(
             .map(|&var| unsafe { c_str(var) })
             .collect::<Option<Vec<_>>>()
             .ok_or(RivalError::Misuse)?;
+
+        // Must have unique variable names.
+        let mut seen = HashSet::new();
+        if !arguments.iter().all(|name| seen.insert(*name)) {
+            return Err(RivalError::Misuse);
+        }
 
         let expressions = ExpressionBuilder::new(arguments);
         *out = Box::into_raw(Box::new(RivalExprBuilder { expressions }));
