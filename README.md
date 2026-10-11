@@ -54,16 +54,19 @@ container. Building the image requires network access; running it does not.
 
 ```sh
 docker build --platform linux/amd64 -t rival3-timing:local .
-mkdir -p result
 ```
 
 `result` is a directory on your host. Both commands below mount it at
 `/output` inside the container, so the generated files remain in `result/`
-after the container exits.
+after the container exits. Each command clears top-level files from `result/`
+first, including files from a previous run. Use this directory only for
+evaluation outputs.
 
 ## Kick the tires
 
 ```sh
+mkdir -p result
+rm -f -- result/*
 docker run --rm --network none --mount type=bind,src="$PWD/result",dst=/output \
   rival3-timing:local bash -lc '
     set -euo pipefail
@@ -88,6 +91,8 @@ generates the report and plots; it can take substantially longer than the
 kick-the-tires run.
 
 ```sh
+mkdir -p result
+rm -f -- result/*
 docker run --rm --network none --mount type=bind,src="$PWD/result",dst=/output \
   rival3-timing:local bash -lc '
     set -euo pipefail

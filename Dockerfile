@@ -18,6 +18,7 @@ RUN apt-get update \
       libgmp-dev=2:6.3.0+dfsg-2ubuntu6.1 \
       libmpfi-dev=1.5.3+ds-6build1 \
       libmpfr-dev=4.2.1-1build1.1 \
+      m4=1.4.19-4build1 \
       python3-matplotlib=3.6.3-1ubuntu5 \
       python3-numpy=1:1.26.4+ds-6ubuntu1 \
       python3-pandas=2.1.4+dfsg-7 \
