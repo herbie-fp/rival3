@@ -50,6 +50,7 @@ def plot_cnt_per_iters(outcomes, args):
     ax.set_title("Convergence distribution")
     plt.tight_layout()
     plt.savefig(args.path + "/cnt_per_iters_plot.png", format="png")
+    plt.savefig(args.path + "/cnt_per_iters_plot.pdf", format="pdf")
    
 
 def load_outcomes(path):

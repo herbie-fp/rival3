@@ -61,6 +61,7 @@ def plot_density_cdf(outcomes, args):
     ax.set_title("Density CDF")
     plt.tight_layout()
     plt.savefig(args.path + "/density_cdf_plot.png", format="png")
+    plt.savefig(args.path + "/density_cdf_plot.pdf", format="pdf")
     plt.close(fig)
 
 def plot_density_plots(args):

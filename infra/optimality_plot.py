@@ -28,6 +28,7 @@ def plot_empty(args):
     ax.set_axis_off()
     plt.tight_layout()
     plt.savefig(args.path + "/optimality_plot.png", format="png")
+    plt.savefig(args.path + "/optimality_plot.pdf", format="pdf")
 
 
 def plot_optimality(outcomes, args):
@@ -84,6 +85,7 @@ def plot_optimality(outcomes, args):
     ax.set_title("Precision compared to optimal")
     plt.tight_layout()
     plt.savefig(args.path + "/optimality_plot.png", format="png")
+    plt.savefig(args.path + "/optimality_plot.pdf", format="pdf")
 
 
 parser = argparse.ArgumentParser(prog="optimality_plot.py", description="Script outputs optimality plots")

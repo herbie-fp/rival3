@@ -72,6 +72,7 @@ def plot_speed_graph_baseline_precision(outcomes, args):
     ax.set_title("Speed plot per precision")
     plt.tight_layout()
     plt.savefig(args.path + "/ratio_plot_precision.png", format="png")
+    plt.savefig(args.path + "/ratio_plot_precision.pdf", format="pdf")
     
     # Latex stuff  
     average_over_sollya = round(sollya_cmp['time'].sum() / rival_cmp['time'].sum(), 2)

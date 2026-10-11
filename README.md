@@ -111,7 +111,7 @@ The results are on the host in `result/`:
 | `index.html` | Timing table and plot links |
 | `timeline.json` | Data used to make the plots |
 | `profile.json` | Racket profiling data |
-| `*.png` | The five plots referenced by the HTML report |
+| `*.png`, `*.pdf` | The five report plots, each in both formats |
 | `full-evaluation.log` | Progress and summary for every record |
 
 Open `result/index.html` directly in a browser for the table and plots.
@@ -119,7 +119,7 @@ Open `result/index.html` directly in a browser for the table and plots.
 profiling widget from loading local JSON files. To check completion, confirm
 `result/full-evaluation.log` contains the `Total Time` and `Total Memory`
 summary and that `result/index.html`, `result/timeline.json`,
-`result/profile.json`, and the referenced PNG files exist.
+`result/profile.json`, and the five PNG/PDF pairs exist.
 
 The image includes `infra/points.json.xz` and expands it in temporary container
 storage for each run. It does not require the separate optimal precision cache.
