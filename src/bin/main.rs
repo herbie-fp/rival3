@@ -6,6 +6,9 @@ use rival::{
 use rug::{Assign, Float, Rational};
 use std::env;
 use std::fmt::Display;
+use std::iter::Peekable;
+use std::process;
+use std::time::Instant;
 
 #[derive(Clone)]
 struct Fp64Discretization;
@@ -52,11 +55,9 @@ fn parse_sexpr(s: &str) -> Result<SExpr, String> {
     Ok(res)
 }
 
-fn parse_sexpr_inner<I: Iterator<Item = char>>(
-    chars: &mut std::iter::Peekable<I>,
-) -> Result<SExpr, String> {
+fn parse_sexpr_inner<I: Iterator<Item = char>>(chars: &mut Peekable<I>) -> Result<SExpr, String> {
     // Skip whitespace.
-    while chars.peek().map_or(false, |c| c.is_whitespace()) {
+    while chars.peek().is_some_and(|c| c.is_whitespace()) {
         chars.next();
     }
 
@@ -66,7 +67,7 @@ fn parse_sexpr_inner<I: Iterator<Item = char>>(
             let mut list = Vec::new();
             loop {
                 // Skip whitespace inside list.
-                while chars.peek().map_or(false, |c| c.is_whitespace()) {
+                while chars.peek().is_some_and(|c| c.is_whitespace()) {
                     chars.next();
                 }
 
@@ -316,7 +317,7 @@ fn main() {
             "Example: {} \"(* (+ 2 (pow x y)) 23/43)\" \"(x y)\" \"(1e-25 5.0)\"",
             args[0]
         );
-        std::process::exit(1);
+        process::exit(1);
     }
 
     let expr_str = &args[1];
@@ -325,28 +326,28 @@ fn main() {
 
     let vars = parse_vars(vars_str).unwrap_or_else(|e| {
         eprintln!("Error parsing variables: {}", e);
-        std::process::exit(1);
+        process::exit(1);
     });
 
     let values = parse_values(values_str).unwrap_or_else(|e| {
         eprintln!("Error parsing values: {}", e);
-        std::process::exit(1);
+        process::exit(1);
     });
 
     if vars.len() != values.len() {
         eprintln!("Number of variables and values must match");
-        std::process::exit(1);
+        process::exit(1);
     }
 
     let sexpr = parse_sexpr(expr_str).unwrap_or_else(|e| {
         eprintln!("Error parsing expression: {}", e);
-        std::process::exit(1);
+        process::exit(1);
     });
 
     let mut expressions = ExpressionBuilder::new(vars.clone());
     let expr = sexpr_to_expr(sexpr, &mut expressions).unwrap_or_else(|e| {
         eprintln!("Error converting expression: {}", e);
-        std::process::exit(1);
+        process::exit(1);
     });
 
     let mut machine = MachineBuilder::new(Fp64Discretization)
@@ -379,7 +380,7 @@ fn main() {
     // Warm-up run just like the racket repl.
     let _ = machine.apply(&arg_ivals, None, 5, OutputPolicy::AllowPartial);
 
-    let start = std::time::Instant::now();
+    let start = Instant::now();
     let result = machine.apply(&arg_ivals, None, 10, OutputPolicy::AllowPartial);
     let total_time = start.elapsed().as_secs_f64() * 1000.0;
 

@@ -1,19 +1,13 @@
-use std::os::raw::c_char;
+mod discretization;
+mod expr;
+mod machine;
+mod options;
+mod profile;
 
-pub mod discretization;
-pub mod expr;
-pub mod hints;
-pub mod machine;
-pub mod profile;
-
-pub use discretization::{RivalDiscType, RivalDiscretization};
-pub use expr::{
-    RIVAL_EXPR_INVALID, RivalBinaryOp, RivalExprBuilder, RivalTernaryOp, RivalUnaryOp,
-    RivalUnaryParamOp,
-};
-pub use hints::RivalHints;
-pub use machine::{RivalAnalyzeResult, RivalMachine, RivalProfilingMode};
-pub use profile::{RivalAggregatedProfile, RivalExecution, RivalProfileSummary};
+use gmp_mpfr_sys::mpfr::mpfr_t;
+use num_enum::{TryFromPrimitive, TryFromPrimitiveError};
+use rival::RivalError as CoreError;
+use std::slice;
 
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -21,32 +15,64 @@ pub enum RivalError {
     Ok = 0,
     InvalidInput = -1,
     Unsamplable = -2,
+    Misuse = -3,
 }
 
-impl RivalError {
-    fn from_abi(code: i32) -> Option<Self> {
-        Some(match code {
-            0 => Self::Ok,
-            -1 => Self::InvalidInput,
-            -2 => Self::Unsamplable,
-            _ => return None,
-        })
+impl From<CoreError> for RivalError {
+    fn from(error: CoreError) -> Self {
+        match error {
+            CoreError::InvalidInput => Self::InvalidInput,
+            CoreError::Unsamplable => Self::Unsamplable,
+        }
     }
 }
 
-pub const RIVAL_ABI_VERSION: u32 = 2;
+impl<T: TryFromPrimitive> From<TryFromPrimitiveError<T>> for RivalError {
+    fn from(_: TryFromPrimitiveError<T>) -> Self {
+        Self::Misuse
+    }
+}
+
+pub type UnaryOpCode = u32;
+pub type UnaryParamOpCode = u32;
+pub type BinaryOpCode = u32;
+pub type TernaryOpCode = u32;
+pub type DiscTypeCode = u32;
+pub type StrategyCode = u32;
+pub type OutputPolicyCode = u32;
+
+// MPFR's own pointer types.
+#[allow(non_camel_case_types)]
+pub type mpfr_srcptr = *const mpfr_t;
+#[allow(non_camel_case_types)]
+pub type mpfr_ptr = *mut mpfr_t;
+
+pub const RIVAL_ABI_VERSION: u32 = 3;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rival_version() -> u32 {
     RIVAL_ABI_VERSION
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn rival_error_message(error: i32) -> *const c_char {
-    match RivalError::from_abi(error) {
-        Some(RivalError::Ok) => c"Success".as_ptr(),
-        Some(RivalError::InvalidInput) => c"Invalid input".as_ptr(),
-        Some(RivalError::Unsamplable) => c"Unsamplable input".as_ptr(),
-        None => c"Unknown error".as_ptr(),
+/// Run a body that uses `?` and return its result as a status code.
+fn status(body: impl FnOnce() -> Result<(), RivalError>) -> RivalError {
+    body().err().unwrap_or(RivalError::Ok)
+}
+
+/// Borrow a C array, which may be NULL only when `len` is zero.
+unsafe fn c_slice<'a, T>(ptr: *const T, len: usize) -> Result<&'a [T], RivalError> {
+    match len {
+        0 => Ok(&[]),
+        _ if ptr.is_null() => Err(RivalError::Misuse),
+        _ => Ok(unsafe { slice::from_raw_parts(ptr, len) }),
+    }
+}
+
+/// Mutably borrow a C array, which may be NULL only when `len` is zero.
+unsafe fn c_slice_mut<'a, T>(ptr: *mut T, len: usize) -> Result<&'a mut [T], RivalError> {
+    match len {
+        0 => Ok(&mut []),
+        _ if ptr.is_null() => Err(RivalError::Misuse),
+        _ => Ok(unsafe { slice::from_raw_parts_mut(ptr, len) }),
     }
 }

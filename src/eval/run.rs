@@ -1,10 +1,13 @@
 //! Main evaluation loop with adaptive precision tuning.
 
+use std::time::Instant;
+
 use itertools::{enumerate, izip};
+use thiserror::Error;
 
 use crate::eval::{
     execute,
-    machine::{Discretization, Hint, Machine},
+    machine::{Discretization, Hint, Machine, Strategy},
     profile::Execution,
 };
 use crate::interval::Ival;
@@ -33,7 +36,9 @@ impl<D: Discretization> Machine<D> {
     /// Pass `None` for default behavior.
     ///
     /// `max_iterations` sets the maximum number of re-evaluation
-    /// iterations before giving up.
+    /// iterations before giving up. A [`Strategy::Baseline`] machine
+    /// ignores it and gives up once the precision would exceed
+    /// [`Machine::max_precision`].
     ///
     /// # Errors
     ///
@@ -61,8 +66,20 @@ impl<D: Discretization> Machine<D> {
             &hint_storage
         };
 
+        match self.strategy {
+            Strategy::Adaptive => self.apply_adaptive(hint_slice, max_iterations, policy),
+            Strategy::Baseline => self.apply_baseline(hint_slice, policy),
+        }
+    }
+
+    fn apply_adaptive(
+        &mut self,
+        hints: &[Hint],
+        max_iterations: usize,
+        policy: OutputPolicy,
+    ) -> Result<Vec<Ival>, RivalError> {
         for iteration in 0..max_iterations {
-            if let Some(results) = self.run_iteration(iteration, hint_slice, policy)? {
+            if let Some(results) = self.run_iteration(iteration, hints, policy)? {
                 return Ok(results);
             }
         }
@@ -70,39 +87,18 @@ impl<D: Discretization> Machine<D> {
         Err(RivalError::Unsamplable)
     }
 
-    /// Evaluate the machine using the baseline strategy.
-    ///
-    /// The baseline strategy uses a single global precision for all
-    /// instructions, doubling it each iteration. This is simpler but
-    /// less efficient than [`Machine::apply`], which uses adaptive
-    /// per-instruction precision tuning.
-    ///
-    /// Call [`Machine::configure_baseline`] before using this method
-    /// to set up the machine for baseline evaluation.
-    pub fn apply_baseline(
+    fn apply_baseline(
         &mut self,
-        args: &[Ival],
-        hint: Option<&[Hint]>,
+        hints: &[Hint],
         policy: OutputPolicy,
     ) -> Result<Vec<Ival>, RivalError> {
-        self.load_arguments(args);
-
-        let hint_storage;
-        let hint_slice: &[Hint] = if let Some(h) = hint {
-            h
-        } else {
-            hint_storage = self.default_hint.clone();
-            &hint_storage
-        };
-
-        let start_prec = self.disc.target().saturating_add(10);
-        let mut prec = start_prec;
+        let mut prec = self.disc.target().saturating_add(10);
         let mut iter: usize = 0;
 
         loop {
             self.iteration = iter;
             self.baseline_adjust(prec);
-            self.run_with_hint(hint_slice);
+            self.run_with_hint(hints);
 
             match self.collect_outputs(policy)? {
                 Some(outputs) => return Ok(outputs),
@@ -116,47 +112,6 @@ impl<D: Discretization> Machine<D> {
                 }
             }
         }
-    }
-
-    /// Analyze an input rectangle using the baseline strategy,
-    /// returning status, next hints, and a convergence flag.
-    ///
-    /// See [`Machine::analyze_with_hints`] for details on the
-    /// return values.
-    pub fn analyze_baseline_with_hints(
-        &mut self,
-        rect: &[Ival],
-        hint: Option<&[Hint]>,
-        policy: OutputPolicy,
-    ) -> (Ival, Vec<Hint>, bool) {
-        self.load_arguments(rect);
-
-        let tmp;
-        let hint_slice = if let Some(h) = hint {
-            h
-        } else {
-            tmp = self.default_hint.clone();
-            &tmp
-        };
-
-        self.iteration = 0;
-        self.baseline_adjust(self.disc.target().saturating_add(10));
-        self.run_with_hint(hint_slice);
-
-        let (good, _done, bad, stuck) = self.return_flags(policy);
-        let (next_hint, converged) = self.make_hint(hint_slice);
-
-        let status = Ival::bool_interval(bad || stuck, (!good) || stuck);
-        (status, next_hint, converged)
-    }
-
-    /// Analyze a hyper-rectangle using the baseline strategy and
-    /// return only the boolean interval status.
-    ///
-    /// See [`Machine::analyze`] for details on the return value.
-    pub fn analyze_baseline(&mut self, rect: &[Ival], policy: OutputPolicy) -> Ival {
-        let (status, _hint, _conv) = self.analyze_baseline_with_hints(rect, None, policy);
-        status
     }
 
     /// Run a single iteration with precision tuning and hint-guided evaluation.
@@ -175,7 +130,7 @@ impl<D: Discretization> Machine<D> {
         self.collect_outputs(policy)
     }
 
-    /// Analyze an input rectangle using adaptive precision tuning.
+    /// Analyze an input rectangle.
     ///
     /// Returns a `(status, hints, converged)` tuple:
     ///
@@ -207,7 +162,12 @@ impl<D: Discretization> Machine<D> {
 
         // One analysis iteration at sampling iteration 0.
         self.iteration = 0;
-        self.adjust(hint_slice);
+        match self.strategy {
+            Strategy::Adaptive => {
+                self.adjust(hint_slice);
+            }
+            Strategy::Baseline => self.baseline_adjust(self.disc.target().saturating_add(10)),
+        }
         self.run_with_hint(hint_slice);
 
         let (good, _done, bad, stuck) = self.return_flags(policy);
@@ -231,8 +191,8 @@ impl<D: Discretization> Machine<D> {
     /// Load argument intervals into the front of the register file.
     pub(crate) fn load_arguments(&mut self, args: &[Ival]) {
         assert_eq!(args.len(), self.arguments.len(), "Argument count mismatch");
-        for (i, arg) in args.iter().cloned().enumerate() {
-            self.registers[i] = arg;
+        for (register, arg) in self.registers.iter_mut().zip(args) {
+            register.clone_from(arg);
         }
         self.bumps = 0;
         self.bumps_activated = false;
@@ -240,9 +200,7 @@ impl<D: Discretization> Machine<D> {
         self.precisions.fill(0);
         self.repeats.fill(false);
         self.output_distance.fill(false);
-        if self.profiling_enabled {
-            self.profiler.reset();
-        }
+        self.profiler.reset();
     }
 
     /// Execute instructions once using the supplied precision and hint plan.
@@ -267,7 +225,7 @@ impl<D: Discretization> Machine<D> {
                 Hint::Skip => {}
                 Hint::Execute => {
                     if self.profiling_enabled {
-                        let start = std::time::Instant::now();
+                        let start = Instant::now();
                         execute::evaluate_instruction(instruction, &mut self.registers, precision);
                         let dt = start.elapsed().as_secs_f64() * 1000.0;
                         let exec = Execution {
@@ -309,7 +267,7 @@ impl<D: Discretization> Machine<D> {
         let instruction_count = self.instructions.len();
         let profiling = self.profiling_enabled;
         let start_time = if profiling {
-            Some(std::time::Instant::now())
+            Some(Instant::now())
         } else {
             None
         };
@@ -346,7 +304,7 @@ impl<D: Discretization> Machine<D> {
             }
 
             // Set repeats and update constant precisions.
-            for idx in 0..instruction_count {
+            for (idx, &is_useful) in useful.iter().enumerate() {
                 let is_constant = self.initial_repeats[idx];
                 let best_known = self.best_known_precisions[idx];
 
@@ -360,7 +318,7 @@ impl<D: Discretization> Machine<D> {
                 }
 
                 let no_need_to_reevaluate = is_constant && new_prec <= best_known && inputs_stable;
-                let result_is_exact_already = !useful[idx];
+                let result_is_exact_already = !is_useful;
                 let repeat = result_is_exact_already || no_need_to_reevaluate;
 
                 if is_constant && !repeat {
@@ -455,7 +413,7 @@ impl<D: Discretization> Machine<D> {
 /// that it has correctly rounded every non-error output. It only returns
 /// [`RivalError::InvalidInput`] when the selected evaluation policy proves
 /// the input invalid.
-#[derive(thiserror::Error, Debug)]
+#[derive(Error, Debug)]
 pub enum RivalError {
     /// The input point is invalid under the evaluation policy being used.
     ///

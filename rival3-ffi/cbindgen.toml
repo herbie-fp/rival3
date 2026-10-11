@@ -1,29 +1,45 @@
 language = "C"
 include_guard = "RIVAL3_FFI_H"
 tab_width = 4
-style = "both"
+style = "type"
 cpp_compat = true
 include_version = true
-includes = ["mpfr.h"]
+usize_is_size_t = true
+no_includes = true
+sys_includes = ["stdbool.h", "stddef.h", "stdint.h", "mpfr.h"]
 
 [export]
 include = [
-    "RivalError",
     "RivalDiscType",
     "RivalUnaryOp",
     "RivalUnaryParamOp",
     "RivalBinaryOp",
     "RivalTernaryOp",
-    "RivalAnalyzeResult",
-    "RivalExecution",
+    "RivalStrategy",
+    "RivalOutputPolicy",
 ]
 
-[fn]
-rename_args = "None"
+exclude = [
+    "UnaryOpCode",
+    "UnaryParamOpCode",
+    "BinaryOpCode",
+    "TernaryOpCode",
+    "DiscTypeCode",
+    "StrategyCode",
+    "OutputPolicyCode",
+    "mpfr_srcptr",
+    "mpfr_ptr",
+]
+
+[export.rename]
+"UnaryOpCode" = "RivalUnaryOp"
+"UnaryParamOpCode" = "RivalUnaryParamOp"
+"BinaryOpCode" = "RivalBinaryOp"
+"TernaryOpCode" = "RivalTernaryOp"
+"DiscTypeCode" = "RivalDiscType"
+"StrategyCode" = "RivalStrategy"
+"OutputPolicyCode" = "RivalOutputPolicy"
 
 [enum]
 rename_variants = "ScreamingSnakeCase"
 prefix_with_name = true
-
-[parse]
-parse_deps = false

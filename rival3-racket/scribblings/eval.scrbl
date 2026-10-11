@@ -160,8 +160,9 @@ can be evaluated at specific input points using @racket[rival-apply].
   (rival-apply
     [machine rival-machine?]
     [point (vectorof (or/c bigfloat? boolean?))]
-    [hints (or/c rival-hints? #f) #f])
-  (vectorof T)]{
+    [hints (or/c rival-hints? #f) #f]
+    [#:partial? partial? any/c #f])
+  (vectorof (or/c T 'invalid))]{
 Evaluates the compiled real expression on an input point represented
 as a vector of bigfloats and booleans. @racket[point] must be the same length as
 the list @racket[vars] passed to @racket[rival-compile]. The output
@@ -176,27 +177,39 @@ If the @racket[point] is an invalid input to at least one of the
 raises @racket[exn:rival:invalid]. If Rival is unable to evaluate 
 at least one of the @racket[exprs] on the @racket[point],
 @racket[rival-apply] raises @racket[exn:rival:unsamplable].
+
+If @racket[partial?] is true, @racket[rival-apply] keeps the results of
+valid expressions when other expressions are totally invalid. Invalid
+output positions contain @racket['invalid], and
+@racket[exn:rival:invalid] is raised only when every output is invalid.
+Pass @racket[#:partial? #t] to @racket[rival-analyze-with-hints] too
+when analysis must use this policy.
 }
 
 @defproc[
-  (rival-apply/partial
+  (rival-apply/f64
     [machine rival-machine?]
-    [point (vectorof (or/c bigfloat? boolean?))]
-    [hints (or/c rival-hints? #f) #f])
-  (vectorof (or/c T 'invalid))]{
-Like @racket[rival-apply], but preserves the results of valid expressions
-when other expressions are totally invalid. Invalid output positions
-contain @racket['invalid], and @racket[exn:rival:invalid] is raised only
-when every output is invalid. @racket[baseline-apply/partial] provides
-the same behavior for a baseline machine. Use
-@racket[rival-analyze-with-hints/partial] (or its baseline counterpart)
-when analysis must use this policy too.
+    [point (vectorof (or/c flonum? boolean?))]
+    [hints (or/c rival-hints? #f) #f]
+    [#:partial? partial? any/c #f])
+  (vectorof (or/c flonum? boolean? 'invalid))]{
+Like @racket[rival-apply], but the point is a vector of flonums and booleans,
+and each output is a flonum for an @racket['f64] or @racket['f32]
+discretization and a boolean for a @racket['bool] discretization. A flonum
+argument is loaded exactly; infinities and NaN are invalid inputs, as their
+bigfloat counterparts are. Rival rounds each output to nearest in its
+discretization's type and never calls the discretization's @racket[convert].
+Where @racket[convert] also rounds to nearest, as in
+@racket[flonum-discretization] and @racket[boolean-discretization],
+@racket[rival-apply/f64] returns the same values and raises the same
+exceptions as @racket[rival-apply] given the same point as bigfloats.
+@racket[partial?] behaves as in @racket[rival-apply].
 }
 
 @deftogether[(
   @defstruct*[(exn:rival exn:fail) ()]
-  @defstruct*[(exn:rival:invalid exn:rival) ([pt (vectorof (or/c bigfloat? boolean?))])]
-  @defstruct*[(exn:rival:unsamplable exn:rival) ([pt (vectorof (or/c bigfloat? boolean?))])]
+  @defstruct*[(exn:rival:invalid exn:rival) ([pt (vectorof (or/c bigfloat? flonum? boolean?))])]
+  @defstruct*[(exn:rival:unsamplable exn:rival) ([pt (vectorof (or/c bigfloat? flonum? boolean?))])]
 )]{}
 
 Note that @racket[rival-apply] will only return a result if it can prove
@@ -231,7 +244,8 @@ likely sufficient for most use cases.
 @defproc[
   (rival-analyze
     [machine rival-machine?]
-    [input-ranges (vectorof ival?)])
+    [input-ranges (vectorof ival?)]
+    [#:partial? partial? any/c #f])
   ival?]{
 Returns a boolean @racket[ival?] describing all-outputs-required failure over
 the supplied @racket[input-ranges], using the endpoint interpretation
@@ -242,7 +256,8 @@ described above.
   (rival-analyze-with-hints
     [machine rival-machine?]
     [input-ranges (vectorof ival?)]
-    [hint (or/c rival-hints? #f) #f])
+    [hints (or/c rival-hints? #f) #f]
+    [#:partial? partial? any/c #f])
   (list/c ival? (or/c rival-hints? #f) boolean?)]{
 Like @racket[rival-analyze], but also returns hints for reuse and
 a convergence flag. The result is a list of three values: the analysis

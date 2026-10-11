@@ -1,7 +1,10 @@
-use std::collections::HashMap;
+use crate::machine::RivalMachine;
+use crate::{RivalError, c_slice_mut, status};
+use rival::Execution;
+use std::ffi::{CString, c_char};
 
 #[repr(C)]
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RivalExecution {
     pub instruction_idx: i32,
     pub precision: u32,
@@ -9,117 +12,108 @@ pub struct RivalExecution {
     pub iteration: u32,
 }
 
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct RivalAggregatedProfile {
-    pub instruction_idx: i32,
-    pub precision_bucket: u32,
-    pub total_time_ms: f64,
-    pub count: usize,
-}
-
-#[repr(C)]
-pub struct RivalProfileSummary {
-    pub entries: *const RivalAggregatedProfile,
-    pub len: usize,
-    pub bumps: u32,
-    pub iterations: u32,
-}
-
-pub(crate) struct ProfileCache {
-    pub executions: Vec<RivalExecution>,
-    pub aggregated: Vec<RivalAggregatedProfile>,
-    pub last_bumps: u32,
-    pub last_iterations: u32,
-    aggregation_buf: HashMap<(i32, u32), (f64, usize)>,
-}
-
-impl ProfileCache {
-    pub fn new() -> Self {
+impl From<&Execution> for RivalExecution {
+    fn from(exec: &Execution) -> Self {
         Self {
-            executions: Vec::new(),
-            aggregated: Vec::new(),
-            last_bumps: 0,
-            last_iterations: 0,
-            aggregation_buf: HashMap::new(),
+            instruction_idx: exec.number,
+            precision: exec.precision,
+            time_ms: exec.time_ms,
+            iteration: exec.iteration as u32,
         }
     }
+}
 
-    pub fn aggregate_from<'a, I>(
-        &mut self,
-        records: I,
-        bucket_size: u32,
-        bumps: usize,
-        iterations: usize,
-    ) -> RivalProfileSummary
-    where
-        I: Iterator<Item = &'a rival::Execution>,
-    {
-        let bucket_size = bucket_size.max(1);
-        self.aggregation_buf.clear();
+pub(crate) struct InstructionNames {
+    // Holds the NUL-terminated names that `ptrs` points into.
+    _names: Vec<CString>,
+    ptrs: Vec<*const c_char>,
+}
 
-        for exec in records {
-            let precision_bucket = exec.precision - (exec.precision % bucket_size);
-            let key = (exec.number, precision_bucket);
-            let entry = self.aggregation_buf.entry(key).or_insert((0.0, 0));
-            entry.0 += exec.time_ms;
-            entry.1 += 1;
-        }
-
-        self.aggregated.clear();
-        self.aggregated.reserve(self.aggregation_buf.len());
-        for (&(instruction_idx, precision_bucket), &(total_time_ms, count)) in &self.aggregation_buf
-        {
-            self.aggregated.push(RivalAggregatedProfile {
-                instruction_idx,
-                precision_bucket,
-                total_time_ms,
-                count,
-            });
-        }
-        self.aggregated
-            .sort_by_key(|e| (e.instruction_idx, e.precision_bucket));
-
-        self.last_bumps = bumps as u32;
-        self.last_iterations = iterations as u32;
-
-        RivalProfileSummary {
-            entries: self.summary_ptr(),
-            len: self.aggregated.len(),
-            bumps: self.last_bumps,
-            iterations: self.last_iterations,
+impl InstructionNames {
+    pub fn new(names: &[&str]) -> Self {
+        let names: Vec<CString> = names
+            .iter()
+            .map(|&name| CString::new(name).expect("instruction names contain no NUL"))
+            .collect();
+        let ptrs = names.iter().map(|name| name.as_ptr()).collect();
+        Self {
+            _names: names,
+            ptrs,
         }
     }
+}
 
-    pub fn summary_from_cache(&self) -> RivalProfileSummary {
-        RivalProfileSummary {
-            entries: self.summary_ptr(),
-            len: self.aggregated.len(),
-            bumps: self.last_bumps,
-            iterations: self.last_iterations,
-        }
-    }
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rival_machine_set_profiling(
+    machine: *mut RivalMachine,
+    enabled: bool,
+) -> RivalError {
+    status(|| {
+        let machine = unsafe { machine.as_mut() }.ok_or(RivalError::Misuse)?;
+        machine.machine.set_profiling_enabled(enabled);
+        Ok(())
+    })
+}
 
-    pub fn cache_executions<'a, I>(&mut self, records: I)
-    where
-        I: Iterator<Item = &'a rival::Execution>,
-    {
-        self.executions.clear();
-        for exec in records {
-            self.executions.push(RivalExecution {
-                instruction_idx: exec.number,
-                precision: exec.precision,
-                time_ms: exec.time_ms,
-                iteration: exec.iteration.min(u32::MAX as usize) as u32,
-            });
-        }
-    }
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rival_machine_get_profiling(machine: *const RivalMachine) -> bool {
+    unsafe { machine.as_ref() }.is_some_and(|machine| machine.machine.profiling_enabled())
+}
 
-    fn summary_ptr(&self) -> *const RivalAggregatedProfile {
-        if self.aggregated.is_empty() {
-            std::ptr::null()
-        } else {
-            self.aggregated.as_ptr()
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rival_machine_profiler_reset(machine: *mut RivalMachine) -> RivalError {
+    status(|| {
+        let machine = unsafe { machine.as_mut() }.ok_or(RivalError::Misuse)?;
+        machine.machine.clear_executions();
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rival_machine_profiler_executions(
+    machine: *const RivalMachine,
+    out: *mut RivalExecution,
+    capacity: usize,
+    out_len: *mut usize,
+) -> RivalError {
+    status(|| {
+        let machine = unsafe { machine.as_ref() }.ok_or(RivalError::Misuse)?;
+        let out = unsafe { c_slice_mut(out, capacity)? };
+        let out_len = unsafe { out_len.as_mut() }.ok_or(RivalError::Misuse)?;
+
+        let records = machine.machine.execution_records();
+        for (slot, record) in out.iter_mut().zip(records) {
+            *slot = record.into();
         }
-    }
+        *out_len = records.len();
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rival_machine_instruction_names(
+    machine: *const RivalMachine,
+    out_names: *mut *const *const c_char,
+    out_len: *mut usize,
+) -> RivalError {
+    status(|| {
+        let machine = unsafe { machine.as_ref() }.ok_or(RivalError::Misuse)?;
+        let out_names = unsafe { out_names.as_mut() }.ok_or(RivalError::Misuse)?;
+        let out_len = unsafe { out_len.as_mut() }.ok_or(RivalError::Misuse)?;
+
+        let names = &machine.instruction_names.ptrs;
+        *out_names = names.as_ptr();
+        *out_len = names.len();
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rival_machine_iterations(machine: *const RivalMachine) -> u32 {
+    unsafe { machine.as_ref() }.map_or(0, |machine| machine.machine.iterations() as u32)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rival_machine_bumps(machine: *const RivalMachine) -> u32 {
+    unsafe { machine.as_ref() }.map_or(0, |machine| machine.machine.bumps() as u32)
 }

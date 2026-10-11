@@ -14,6 +14,10 @@ def_ops! {
         E: {
             method: set_e,
         },
+
+        Infinity: {
+            method: set_infinity,
+        },
     },
 
     unary {
