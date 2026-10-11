@@ -101,7 +101,7 @@
         (parameterize ([*rival-max-precision* 32256])
           (with-handlers ([exn:rival:invalid? (λ (e) (list 'invalid #f))]
                           [exn:rival:unsamplable? (λ (e) (list 'unsamplable #f))])
-            (define exs (vector-ref (baseline-apply baseline-machine (list->vector (map bf pt))) 1))
+            (define exs (vector-ref (rival-apply baseline-machine (list->vector (map bf pt))) 1))
             (list 'valid exs))))
       (define baseline-apply-time (- (current-inexact-milliseconds) baseline-start-apply))
       (define baseline-executions (rival-profile baseline-machine 'executions))
