@@ -73,7 +73,13 @@ docker run --rm --network none --mount type=bind,src="$PWD/result",dst=/output \
     {
       xz -dc infra/points.json.xz > /tmp/points.json
       racket infra/smoke-test.rkt
-      racket infra/time.rkt --id 4 /tmp/points.json
+      racket infra/time.rkt --id 4 --dir /output --profile /output/profile.json /tmp/points.json
+      python3 infra/ratio_plot.py -t /output/timeline.json -o /output
+      python3 infra/histograms.py -t /output/timeline.json -o /output
+      python3 infra/cnt_per_iters_plot.py -t /output/timeline.json -o /output
+      python3 infra/density_plot.py -t /output/timeline.json -o /output
+      python3 infra/optimality_plot.py -t /output/timeline.json -o /output
+      cp infra/profile.js /output/profile.js
     } 2>&1 | tee /output/kick-the-tires.log
   '
 ```
@@ -82,7 +88,8 @@ This runs the Racket binding smoke test and then benchmark record `4` (the
 fifth record) against every point in the real dataset. It exercises Rival,
 Sollya, and the optimal precision calculation. Check
 `result/kick-the-tires.log` for the selected expression and the line beginning
-`4:`. This short run does not generate the HTML report or plots.
+`4:`. It also writes the HTML report, profile, timeline, and all five plot
+pairs (PNG and PDF) to `result/`, using only that benchmark record.
 
 ## Full evaluation
 
@@ -109,7 +116,7 @@ docker run --rm --network none --mount type=bind,src="$PWD/result",dst=/output \
   '
 ```
 
-The results are on the host in `result/`:
+Either run writes these results to the host in `result/`:
 
 | File | Contents |
 | --- | --- |
@@ -117,13 +124,13 @@ The results are on the host in `result/`:
 | `timeline.json` | Data used to make the plots |
 | `profile.json` | Racket profiling data |
 | `*.png`, `*.pdf` | The five report plots, each in both formats |
-| `full-evaluation.log` | Progress and summary for every record |
+| `kick-the-tires.log` or `full-evaluation.log` | Progress and summary for the selected run |
 
 Open `result/index.html` directly in a browser for the table and plots.
 `profile.json` is available alongside it. Some browsers block the HTML
 profiling widget from loading local JSON files. To check completion, confirm
-`result/full-evaluation.log` contains the `Total Time` and `Total Memory`
-summary and that `result/index.html`, `result/timeline.json`,
+the run log contains the `Total Time` and `Total Memory` summary and that
+`result/index.html`, `result/timeline.json`,
 `result/profile.json`, and the five PNG/PDF pairs exist.
 
 The image includes `infra/points.json.xz` and expands it in temporary container
@@ -132,7 +139,7 @@ Dependency versions are pinned in the [Dockerfile](Dockerfile).
 
 ## Try the Rust CLI
 
-With Rust 1.85 or newer installed, you can try Rival directly from the
+With Rust 1.88 or newer installed, you can try Rival directly from the
 repository root. Pass an expression, its variables, and their input values:
 
 ```sh

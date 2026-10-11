@@ -2,6 +2,7 @@
 name = "rival3"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.88"
 license = "MIT"
 description = "Real Computation via Interval Arithmetic"
 repository = "https://github.com/herbie-fp/rival3"
