@@ -1,4 +1,4 @@
-# Rival (paper name is Reval)
+# Rival (paper name is Reval, they mean the same thing)
 
 Rival evaluates real expressions to high precision. This repository contains a
 timing evaluation comparing Rival with the Ziv+, Ziv, and Sollya evaluators.
@@ -14,7 +14,7 @@ data and required tools.
 | `rival3-racket/` | Racket package exposing Rival |
 | `infra/points.json.xz` | Compressed timing benchmark input |
 | `infra/time.rkt` | Benchmark runner and HTML/timeline generator |
-| `infra/*_plot.py`, `infra/histograms.py` | Plot generators used by the HTML report |
+| `infra/*_plot.py`, `infra/histograms.py` | Report plots and printed evaluation statistics |
 | `Dockerfile` | Pinned Linux amd64 evaluation environment |
 
 ### Rust source map
@@ -154,11 +154,14 @@ Please, proceed to the "Verifying paper claims" once the full evaluation is done
 
 Please, compare obtained plots to the ones in the paper.
 The mappings are:
-`ratio_plot_precision.pdf*` -> Figure 2
-`optimality_plot.pdf` -> Figure 3
-`density_cdf_plot.pdf` -> Figure 4
-`cnt_per_iters_plot.pdf` -> Figure 5
-`histogram_valid.pdf` -> Figure 6
+
+| Plot | Paper figure |
+| --- | --- |
+| `ratio_plot_precision.pdf` | Figure 2 |
+| `optimality_plot.pdf` | Figure 3 |
+| `density_cdf_plot.pdf` | Figure 4 |
+| `cnt_per_iters_plot.pdf` | Figure 5 |
+| `histogram_valid.pdf` | Figure 6 |
 
 Slight differences are expected for Figure 2, however, the trend should be the same: Rival should outperform other tools.
 
@@ -217,10 +220,10 @@ Make sure that these numbers are 14.41 (closer than Ziv) and 8.01 (closer than Z
 
 Using `result/full-evaluation.log`, find: 
 ```
-\newcommand{\DensityPercentageofLowerPrecisionReval}{...}
-\newcommand{\DensityPercentageofLowerPrecisionBaseline}{...}
-\newcommand{\DensityPercentageofLowerPrecisionZiv}{...}
-\newcommand{\DensityPercentageofLowerPrecisionOptimal}{...}
+\newcommand{\DensityPercentageOfLowerPrecisionReval}{...}
+\newcommand{\DensityPercentageOfLowerPrecisionBaseline}{...}
+\newcommand{\DensityPercentageOfLowerPrecisionZiv}{...}
+\newcommand{\DensityPercentageOfLowerPrecisionOptimal}{...}
 ```
 The numbers should be: 43.64, 31.93, 1.06, 50.41. Minor difference is unlikely but possible.
 
