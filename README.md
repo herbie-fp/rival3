@@ -290,10 +290,22 @@ Total: 5.2 µs
 The `Bits` columns show the precision used for each instruction in each
 iteration. The final value is the computed interval.
 
+### Overview example
 
-Additionally, you might want to try Overview examples in CLI.
+These commands evaluate `f(x) = (1 - cos(x)) / sin(x)` for different values of
+`x`. Near zero, `f(x)` is approximately `x / 2`. Computing `1 - cos(x)`
+subtracts two nearly equal numbers, so Rival may need more precision as `x`
+gets smaller. The timings below will vary by machine.
 
-docker run --rm --network none rival-artifact   /workspace/target/release/rival-cli   "(/ (- 1 (cos x)) (sin x))" "(x)" "(1e-8)"
+For `x = 1e-8`:
+
+```sh
+docker run --rm --network none rival-artifact \
+  /workspace/target/release/rival-cli \
+  "(/ (- 1 (cos x)) (sin x))" "(x)" "(1e-8)"
+```
+
+```text
 Executed 5 instructions for 2 iterations:
 
 ┌────────┬────────┬────────┬────────┬────────┐
@@ -309,28 +321,17 @@ Executed 5 instructions for 2 iterations:
 
 Final value: [0.000000005, 0.000000005]
 Total: 8.6 µs
+```
 
+For `x = 1e-18`:
 
-docker run --rm --network none rival-artifact   /workspace/target/release/rival-cli   "(/ (- 1 (cos x)) (sin x))" "(x)" "(1e-80)"
-Executed 5 instructions for 4 iterations:
+```sh
+docker run --rm --network none rival-artifact \
+  /workspace/target/release/rival-cli \
+  "(/ (- 1 (cos x)) (sin x))" "(x)" "(1e-18)"
+```
 
-┌────────┬────────┬────────┬────────┬────────┬────────┬────────┬────────┬────────┐
-│ Name   │ 0 Bits │ 0 Time │ 1 Bits │ 1 Time │ 2 Bits │ 2 Time │ 3 Bits │ 3 Time │
-├────────┼────────┼────────┼────────┼────────┼────────┼────────┼────────┼────────┤
-│ adjust │        │        │        │ 0.5 µs │        │ 0.4 µs │        │ 0.3 µs │
-│ Cos    │     62 │ 0.3 µs │    178 │ 0.3 µs │    347 │ 0.3 µs │    622 │ 6.0 µs │
-│ Sub    │     60 │ 0.3 µs │     60 │ 0.2 µs │     60 │ 0.3 µs │     60 │ 0.3 µs │
-│ Sin    │     60 │ 0.2 µs │        │        │        │        │        │        │
-│ Div    │     58 │ 0.3 µs │     58 │ 0.2 µs │     58 │ 0.2 µs │     58 │ 0.3 µs │
-│ Total  │        │ 1.2 µs │        │ 1.2 µs │        │ 1.1 µs │        │ 6.9 µs │
-└────────┴────────┴────────┴────────┴────────┴────────┴────────┴────────┴────────┘
-
-Final value: [0.000000000000000000000000000000000000000000000000000000000000000000000000000000005, 0.00000000000000000000000000000000000000000000000000000000000000000
-0000000000000005]
-Total: 12.5 µs
-
-
-docker run --rm --network none rival-artifact   /workspace/target/release/rival-cli   "(/ (- 1 (cos x)) (sin x))" "(x)" "(1e-18)"
+```text
 Executed 5 instructions for 2 iterations:
 
 ┌────────┬────────┬────────┬────────┬────────┐
@@ -346,9 +347,17 @@ Executed 5 instructions for 2 iterations:
 
 Final value: [0.0000000000000000005, 0.0000000000000000005]
 Total: 5.7 µs
+```
 
+For `x = 1e-26`:
 
-docker run --rm --network none rival-artifact   /workspace/target/release/rival-cli   "(/ (- 1 (cos x)) (sin x))" "(x)" "(1e-26)"
+```sh
+docker run --rm --network none rival-artifact \
+  /workspace/target/release/rival-cli \
+  "(/ (- 1 (cos x)) (sin x))" "(x)" "(1e-26)"
+```
+
+```text
 Executed 5 instructions for 3 iterations:
 
 ┌────────┬────────┬────────┬────────┬────────┬────────┬────────┐
@@ -364,4 +373,33 @@ Executed 5 instructions for 3 iterations:
 
 Final value: [0.000000000000000000000000005, 0.000000000000000000000000005]
 Total: 10.6 µs
+```
+
+For `x = 1e-80`:
+
+```sh
+docker run --rm --network none rival-artifact \
+  /workspace/target/release/rival-cli \
+  "(/ (- 1 (cos x)) (sin x))" "(x)" "(1e-80)"
+```
+
+```text
+Executed 5 instructions for 4 iterations:
+
+┌────────┬────────┬────────┬────────┬────────┬────────┬────────┬────────┬────────┐
+│ Name   │ 0 Bits │ 0 Time │ 1 Bits │ 1 Time │ 2 Bits │ 2 Time │ 3 Bits │ 3 Time │
+├────────┼────────┼────────┼────────┼────────┼────────┼────────┼────────┼────────┤
+│ adjust │        │        │        │ 0.5 µs │        │ 0.4 µs │        │ 0.3 µs │
+│ Cos    │     62 │ 0.3 µs │    178 │ 0.3 µs │    347 │ 0.3 µs │    622 │ 6.0 µs │
+│ Sub    │     60 │ 0.3 µs │     60 │ 0.2 µs │     60 │ 0.3 µs │     60 │ 0.3 µs │
+│ Sin    │     60 │ 0.2 µs │        │        │        │        │        │        │
+│ Div    │     58 │ 0.3 µs │     58 │ 0.2 µs │     58 │ 0.2 µs │     58 │ 0.3 µs │
+│ Total  │        │ 1.2 µs │        │ 1.2 µs │        │ 1.1 µs │        │ 6.9 µs │
+└────────┴────────┴────────┴────────┴────────┴────────┴────────┴────────┴────────┘
+
+Total: 12.5 µs
+```
+
+The final decimal interval is very long; both endpoints are approximately
+`5e-81`.
 
