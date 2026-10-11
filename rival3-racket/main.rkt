@@ -95,8 +95,8 @@
 (define-ffi-definer define-rival (ffi-lib _lib-path))
 
 (define abi-version 3)
-(define-rival rival_abi_version (_fun -> _uint32))
-(let ([v (rival_abi_version)])
+(define-rival rival_version (_fun -> _uint32))
+(let ([v (rival_version)])
   (unless (= v abi-version)
     (error 'rival3 "ABI version mismatch: expected ~a, got ~a" abi-version v)))
 
@@ -172,10 +172,22 @@
                     (hints : (_ptr o _pointer))
                     -> (status : _rival-error)
                     -> (values status analysis converged hints)))
+(define-rival rival_machine_analyze/no-hints
+              (_fun _pointer
+                    _pointer
+                    _size
+                    _pointer
+                    _rival-output-policy
+                    (analysis : (_ptr o _rival-analysis))
+                    (_pointer = #f)
+                    (_pointer = #f)
+                    -> (status : _rival-error)
+                    -> (values status analysis #f #f))
+              #:c-id rival_machine_analyze)
 
 (define-rival rival_hints_free (_fun _pointer -> _void))
 
-(define-rival rival_machine_profiler_reset (_fun _pointer -> _void))
+(define-rival rival_machine_profiler_reset (_fun _pointer -> _rival-error))
 (define-rival rival_machine_profiler_executions
               (_fun _pointer
                     _pointer
@@ -289,9 +301,6 @@
       [(or 'INFINITY '(INFINITY)) (rival_expr_infinity builder)]
       [(or 'NAN '(NAN)) (rival_expr_f64 builder +nan.0)]
       [(? symbol?) (rival_expr_var builder (symbol->string expr))]
-      [(? exact-integer?)
-       #:when (< (abs expr) (expt 2 53))
-       (rival_expr_f64 builder (exact->inexact expr))]
       [(? exact-integer?) (rival_expr_bigint builder (number->string expr))]
       [(and (? rational?) (? exact?))
        (rival_expr_bigrational builder
@@ -527,7 +536,8 @@
     (ptr-set! rect-ptrs _mpfr-pointer (* 2 i) lo)
     (ptr-set! rect-ptrs _mpfr-pointer (+ (* 2 i) 1) hi))
   (define-values (status-code analysis converged hints-ptr)
-    (rival_machine_analyze machine rect-ptrs n-args hint policy))
+    ((if keep-hints? rival_machine_analyze rival_machine_analyze/no-hints)
+     machine rect-ptrs n-args hint policy))
   (check-ok! error-name status-code rect)
   (define new-hints
     (cond
@@ -535,9 +545,7 @@
        (define wrapper (hints-wrapper hints-ptr machine))
        (register-finalizer wrapper hints-destroy)
        wrapper]
-      [else
-       (rival_hints_free hints-ptr)
-       #f]))
+      [else #f]))
   (define status
     (match analysis
       ['valid (ival #f #f)]

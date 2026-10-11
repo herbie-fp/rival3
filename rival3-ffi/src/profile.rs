@@ -61,10 +61,12 @@ pub unsafe extern "C" fn rival_machine_get_profiling(machine: *const RivalMachin
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn rival_machine_profiler_reset(machine: *mut RivalMachine) {
-    if let Some(machine) = unsafe { machine.as_mut() } {
+pub unsafe extern "C" fn rival_machine_profiler_reset(machine: *mut RivalMachine) -> RivalError {
+    status(|| {
+        let machine = unsafe { machine.as_mut() }.ok_or(RivalError::Misuse)?;
         machine.machine.clear_executions();
-    }
+        Ok(())
+    })
 }
 
 #[unsafe(no_mangle)]

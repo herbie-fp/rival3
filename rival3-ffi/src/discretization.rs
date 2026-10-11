@@ -1,23 +1,13 @@
+use num_enum::TryFromPrimitive;
 use rival::Discretization;
 use rug::Float;
 
 #[repr(u32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromPrimitive)]
 pub enum RivalDiscType {
     Bool = 0,
     F32 = 1,
     F64 = 2,
-}
-
-impl RivalDiscType {
-    pub(crate) fn from_abi(code: u32) -> Option<Self> {
-        Some(match code {
-            0 => Self::Bool,
-            1 => Self::F32,
-            2 => Self::F64,
-            _ => return None,
-        })
-    }
 }
 
 #[derive(Clone)]

@@ -19,12 +19,27 @@ include = [
     "RivalOutputPolicy",
 ]
 
-[fn]
-rename_args = "None"
+exclude = [
+    "UnaryOpCode",
+    "UnaryParamOpCode",
+    "BinaryOpCode",
+    "TernaryOpCode",
+    "DiscTypeCode",
+    "StrategyCode",
+    "OutputPolicyCode",
+    "mpfr_srcptr",
+    "mpfr_ptr",
+]
+
+[export.rename]
+"UnaryOpCode" = "RivalUnaryOp"
+"UnaryParamOpCode" = "RivalUnaryParamOp"
+"BinaryOpCode" = "RivalBinaryOp"
+"TernaryOpCode" = "RivalTernaryOp"
+"DiscTypeCode" = "RivalDiscType"
+"StrategyCode" = "RivalStrategy"
+"OutputPolicyCode" = "RivalOutputPolicy"
 
 [enum]
 rename_variants = "ScreamingSnakeCase"
 prefix_with_name = true
-
-[parse]
-parse_deps = false

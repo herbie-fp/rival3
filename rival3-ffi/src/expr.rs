@@ -1,20 +1,25 @@
-use crate::{RivalError, c_slice, status};
+use crate::{
+    BinaryOpCode, RivalError, TernaryOpCode, UnaryOpCode, UnaryParamOpCode, c_slice, status,
+};
+use num_enum::TryFromPrimitive;
 use rival::{Expression, ExpressionBuilder};
 use rug::{Float, Integer, Rational};
 use std::ffi::{CStr, c_char};
 
-pub const RIVAL_EXPR_INVALID: u32 = u32::MAX;
+pub type RivalExpr = u32;
+
+pub const RIVAL_EXPR_INVALID: RivalExpr = u32::MAX;
 
 pub struct RivalExprBuilder {
     pub(crate) expressions: ExpressionBuilder,
 }
 
 impl RivalExprBuilder {
-    fn expression(&self, handle: u32) -> Option<Expression> {
+    fn expression(&self, handle: RivalExpr) -> Option<Expression> {
         self.expressions.expression(handle as usize)
     }
 
-    pub(crate) fn outputs(&self, handles: &[u32]) -> Option<Vec<Expression>> {
+    pub(crate) fn outputs(&self, handles: &[RivalExpr]) -> Option<Vec<Expression>> {
         handles
             .iter()
             .map(|&handle| self.expression(handle))
@@ -25,10 +30,10 @@ impl RivalExprBuilder {
 fn build(
     builder: Option<&mut RivalExprBuilder>,
     make: impl FnOnce(&mut RivalExprBuilder) -> Option<Expression>,
-) -> u32 {
+) -> RivalExpr {
     builder
         .and_then(make)
-        .and_then(|expression| u32::try_from(expression.index()).ok())
+        .and_then(|expression| RivalExpr::try_from(expression.index()).ok())
         .unwrap_or(RIVAL_EXPR_INVALID)
 }
 
@@ -75,7 +80,7 @@ pub unsafe extern "C" fn rival_expr_builder_free(builder: *mut RivalExprBuilder)
 pub unsafe extern "C" fn rival_expr_var(
     builder: *mut RivalExprBuilder,
     name: *const c_char,
-) -> u32 {
+) -> RivalExpr {
     let name = unsafe { c_str(name) };
     build(unsafe { builder.as_mut() }, |b| {
         b.expressions.variable(name?)
@@ -83,7 +88,7 @@ pub unsafe extern "C" fn rival_expr_var(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn rival_expr_f64(builder: *mut RivalExprBuilder, value: f64) -> u32 {
+pub unsafe extern "C" fn rival_expr_f64(builder: *mut RivalExprBuilder, value: f64) -> RivalExpr {
     build(unsafe { builder.as_mut() }, |b| {
         Some(
             b.expressions
@@ -96,7 +101,7 @@ pub unsafe extern "C" fn rival_expr_f64(builder: *mut RivalExprBuilder, value: f
 pub unsafe extern "C" fn rival_expr_bigint(
     builder: *mut RivalExprBuilder,
     value: *const c_char,
-) -> u32 {
+) -> RivalExpr {
     let value = unsafe { c_integer(value) };
     build(unsafe { builder.as_mut() }, |b| {
         Some(b.expressions.rational(Rational::from(value?)))
@@ -108,7 +113,7 @@ pub unsafe extern "C" fn rival_expr_bigrational(
     builder: *mut RivalExprBuilder,
     numerator: *const c_char,
     denominator: *const c_char,
-) -> u32 {
+) -> RivalExpr {
     let numerator = unsafe { c_integer(numerator) };
     let denominator = unsafe { c_integer(denominator) };
     build(unsafe { builder.as_mut() }, |b| {
@@ -121,24 +126,24 @@ pub unsafe extern "C" fn rival_expr_bigrational(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn rival_expr_pi(builder: *mut RivalExprBuilder) -> u32 {
+pub unsafe extern "C" fn rival_expr_pi(builder: *mut RivalExprBuilder) -> RivalExpr {
     build(unsafe { builder.as_mut() }, |b| Some(b.expressions.pi()))
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn rival_expr_e(builder: *mut RivalExprBuilder) -> u32 {
+pub unsafe extern "C" fn rival_expr_e(builder: *mut RivalExprBuilder) -> RivalExpr {
     build(unsafe { builder.as_mut() }, |b| Some(b.expressions.e()))
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn rival_expr_infinity(builder: *mut RivalExprBuilder) -> u32 {
+pub unsafe extern "C" fn rival_expr_infinity(builder: *mut RivalExprBuilder) -> RivalExpr {
     build(unsafe { builder.as_mut() }, |b| {
         Some(b.expressions.infinity())
     })
 }
 
 #[repr(u32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromPrimitive)]
 pub enum RivalUnaryOp {
     Neg = 0,
     Fabs = 1,
@@ -179,72 +184,16 @@ pub enum RivalUnaryOp {
     Error = 36,
 }
 
-impl RivalUnaryOp {
-    fn from_abi(code: u32) -> Option<Self> {
-        Some(match code {
-            0 => Self::Neg,
-            1 => Self::Fabs,
-            2 => Self::Sqrt,
-            3 => Self::Cbrt,
-            4 => Self::Pow2,
-            5 => Self::Exp,
-            6 => Self::Exp2,
-            7 => Self::Expm1,
-            8 => Self::Log,
-            9 => Self::Log2,
-            10 => Self::Log10,
-            11 => Self::Log1p,
-            12 => Self::Logb,
-            13 => Self::Sin,
-            14 => Self::Cos,
-            15 => Self::Tan,
-            16 => Self::Asin,
-            17 => Self::Acos,
-            18 => Self::Atan,
-            19 => Self::Sinh,
-            20 => Self::Cosh,
-            21 => Self::Tanh,
-            22 => Self::Asinh,
-            23 => Self::Acosh,
-            24 => Self::Atanh,
-            25 => Self::Erf,
-            26 => Self::Erfc,
-            27 => Self::Lgamma,
-            28 => Self::Tgamma,
-            29 => Self::Rint,
-            30 => Self::Round,
-            31 => Self::Ceil,
-            32 => Self::Floor,
-            33 => Self::Trunc,
-            34 => Self::Not,
-            35 => Self::Assert,
-            36 => Self::Error,
-            _ => return None,
-        })
-    }
-}
-
 #[repr(u32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromPrimitive)]
 pub enum RivalUnaryParamOp {
     Cosu = 0,
     Sinu = 1,
     Tanu = 2,
 }
 
-impl RivalUnaryParamOp {
-    fn from_abi(code: u32) -> Option<Self> {
-        Some(match code {
-            0 => Self::Cosu,
-            1 => Self::Sinu,
-            2 => Self::Tanu,
-            _ => return None,
-        })
-    }
-}
-
 #[repr(u32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromPrimitive)]
 pub enum RivalBinaryOp {
     Add = 0,
     Sub = 1,
@@ -269,62 +218,23 @@ pub enum RivalBinaryOp {
     Ge = 20,
 }
 
-impl RivalBinaryOp {
-    fn from_abi(code: u32) -> Option<Self> {
-        Some(match code {
-            0 => Self::Add,
-            1 => Self::Sub,
-            2 => Self::Mul,
-            3 => Self::Div,
-            4 => Self::Pow,
-            5 => Self::Hypot,
-            6 => Self::Fmin,
-            7 => Self::Fmax,
-            8 => Self::Fdim,
-            9 => Self::Copysign,
-            10 => Self::Fmod,
-            11 => Self::Remainder,
-            12 => Self::Atan2,
-            13 => Self::And,
-            14 => Self::Or,
-            15 => Self::Eq,
-            16 => Self::Ne,
-            17 => Self::Lt,
-            18 => Self::Le,
-            19 => Self::Gt,
-            20 => Self::Ge,
-            _ => return None,
-        })
-    }
-}
-
 #[repr(u32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromPrimitive)]
 pub enum RivalTernaryOp {
     Fma = 0,
     If = 1,
 }
 
-impl RivalTernaryOp {
-    fn from_abi(code: u32) -> Option<Self> {
-        Some(match code {
-            0 => Self::Fma,
-            1 => Self::If,
-            _ => return None,
-        })
-    }
-}
-
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rival_expr_unary(
     builder: *mut RivalExprBuilder,
-    op: u32,
-    arg: u32,
-) -> u32 {
+    op: UnaryOpCode,
+    arg: RivalExpr,
+) -> RivalExpr {
     build(unsafe { builder.as_mut() }, |b| {
         let arg = b.expression(arg)?;
         let expressions = &mut b.expressions;
-        Some(match RivalUnaryOp::from_abi(op)? {
+        Some(match RivalUnaryOp::try_from(op).ok()? {
             RivalUnaryOp::Neg => expressions.neg(arg),
             RivalUnaryOp::Fabs => expressions.fabs(arg),
             RivalUnaryOp::Sqrt => expressions.sqrt(arg),
@@ -369,15 +279,15 @@ pub unsafe extern "C" fn rival_expr_unary(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rival_expr_unary_param(
     builder: *mut RivalExprBuilder,
-    op: u32,
+    op: UnaryParamOpCode,
     param: u32,
-    arg: u32,
-) -> u32 {
+    arg: RivalExpr,
+) -> RivalExpr {
     build(unsafe { builder.as_mut() }, |b| {
         let arg = b.expression(arg)?;
         let expressions = &mut b.expressions;
         let param = param.into();
-        Some(match RivalUnaryParamOp::from_abi(op)? {
+        Some(match RivalUnaryParamOp::try_from(op).ok()? {
             RivalUnaryParamOp::Cosu => expressions.cosu(param, arg),
             RivalUnaryParamOp::Sinu => expressions.sinu(param, arg),
             RivalUnaryParamOp::Tanu => expressions.tanu(param, arg),
@@ -388,14 +298,14 @@ pub unsafe extern "C" fn rival_expr_unary_param(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rival_expr_binary(
     builder: *mut RivalExprBuilder,
-    op: u32,
-    lhs: u32,
-    rhs: u32,
-) -> u32 {
+    op: BinaryOpCode,
+    lhs: RivalExpr,
+    rhs: RivalExpr,
+) -> RivalExpr {
     build(unsafe { builder.as_mut() }, |b| {
         let (lhs, rhs) = (b.expression(lhs)?, b.expression(rhs)?);
         let expressions = &mut b.expressions;
-        Some(match RivalBinaryOp::from_abi(op)? {
+        Some(match RivalBinaryOp::try_from(op).ok()? {
             RivalBinaryOp::Add => expressions.add(lhs, rhs),
             RivalBinaryOp::Sub => expressions.sub(lhs, rhs),
             RivalBinaryOp::Mul => expressions.mul(lhs, rhs),
@@ -424,11 +334,11 @@ pub unsafe extern "C" fn rival_expr_binary(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rival_expr_ternary(
     builder: *mut RivalExprBuilder,
-    op: u32,
-    arg1: u32,
-    arg2: u32,
-    arg3: u32,
-) -> u32 {
+    op: TernaryOpCode,
+    arg1: RivalExpr,
+    arg2: RivalExpr,
+    arg3: RivalExpr,
+) -> RivalExpr {
     build(unsafe { builder.as_mut() }, |b| {
         let (arg1, arg2, arg3) = (
             b.expression(arg1)?,
@@ -436,7 +346,7 @@ pub unsafe extern "C" fn rival_expr_ternary(
             b.expression(arg3)?,
         );
         let expressions = &mut b.expressions;
-        Some(match RivalTernaryOp::from_abi(op)? {
+        Some(match RivalTernaryOp::try_from(op).ok()? {
             RivalTernaryOp::Fma => expressions.fma(arg1, arg2, arg3),
             RivalTernaryOp::If => expressions.if_else(arg1, arg2, arg3),
         })

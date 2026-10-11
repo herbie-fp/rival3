@@ -1,9 +1,12 @@
 use crate::discretization::{RivalDiscType, RivalDiscretization};
-use crate::expr::RivalExprBuilder;
+use crate::expr::{RivalExpr, RivalExprBuilder};
 use crate::options::RivalMachineOptions;
 use crate::profile::InstructionNames;
-use crate::{RivalError, c_slice, c_slice_mut, status};
+use crate::{
+    DiscTypeCode, OutputPolicyCode, RivalError, c_slice, c_slice_mut, mpfr_ptr, mpfr_srcptr, status,
+};
 use gmp_mpfr_sys::mpfr::{self, mpfr_t};
+use num_enum::TryFromPrimitive;
 use rival::{Discretization, ErrorFlags, Hint, Ival, Machine, MachineBuilder, OutputPolicy};
 use rug::Assign;
 
@@ -20,20 +23,10 @@ pub struct RivalHints {
 }
 
 #[repr(u32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromPrimitive)]
 pub enum RivalOutputPolicy {
     RequireAll = 0,
     AllowPartial = 1,
-}
-
-impl RivalOutputPolicy {
-    fn from_abi(code: u32) -> Option<Self> {
-        Some(match code {
-            0 => Self::RequireAll,
-            1 => Self::AllowPartial,
-            _ => return None,
-        })
-    }
 }
 
 #[repr(u32)]
@@ -44,12 +37,11 @@ pub enum RivalAnalysis {
     Invalid = 2,
 }
 
-fn output_policy(code: u32) -> Result<OutputPolicy, RivalError> {
-    match RivalOutputPolicy::from_abi(code) {
-        Some(RivalOutputPolicy::RequireAll) => Ok(OutputPolicy::RequireAll),
-        Some(RivalOutputPolicy::AllowPartial) => Ok(OutputPolicy::AllowPartial),
-        None => Err(RivalError::Misuse),
-    }
+fn output_policy(code: OutputPolicyCode) -> Result<OutputPolicy, RivalError> {
+    Ok(match RivalOutputPolicy::try_from(code)? {
+        RivalOutputPolicy::RequireAll => OutputPolicy::RequireAll,
+        RivalOutputPolicy::AllowPartial => OutputPolicy::AllowPartial,
+    })
 }
 
 unsafe fn machine_hints<'a>(
@@ -155,8 +147,8 @@ fn write_f64_outputs(outputs: &[Ival], disc: &RivalDiscretization, out: &mut [f6
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rival_machine_new(
     builder: *const RivalExprBuilder,
-    expr_handles: *const u32,
-    types: *const u32,
+    expr_handles: *const RivalExpr,
+    types: *const DiscTypeCode,
     n_exprs: usize,
     options: *const RivalMachineOptions,
     out: *mut *mut RivalMachine,
@@ -171,9 +163,8 @@ pub unsafe extern "C" fn rival_machine_new(
 
         let types = types
             .iter()
-            .map(|&code| RivalDiscType::from_abi(code))
-            .collect::<Option<Vec<_>>>()
-            .ok_or(RivalError::Misuse)?;
+            .map(|&code| RivalDiscType::try_from(code))
+            .collect::<Result<Vec<_>, _>>()?;
         let outputs = builder.outputs(handles).ok_or(RivalError::Misuse)?;
 
         let n_vars = builder.expressions.argument_count();
@@ -227,12 +218,12 @@ pub unsafe extern "C" fn rival_machine_expr_count(machine: *const RivalMachine) 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rival_machine_apply(
     machine: *mut RivalMachine,
-    args: *const *const mpfr_t,
+    args: *const mpfr_srcptr,
     n_args: usize,
     hints: *const RivalHints,
     max_iterations: u32,
-    policy: u32,
-    out: *const *mut mpfr_t,
+    policy: OutputPolicyCode,
+    out: *const mpfr_ptr,
     n_out: usize,
 ) -> RivalError {
     status(|| {
@@ -266,7 +257,7 @@ pub unsafe extern "C" fn rival_machine_apply_f64(
     n_args: usize,
     hints: *const RivalHints,
     max_iterations: u32,
-    policy: u32,
+    policy: OutputPolicyCode,
     out: *mut f64,
     n_out: usize,
 ) -> RivalError {
@@ -293,10 +284,10 @@ pub unsafe extern "C" fn rival_machine_apply_f64(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rival_machine_analyze(
     machine: *mut RivalMachine,
-    rect: *const *const mpfr_t,
+    rect: *const mpfr_srcptr,
     n_args: usize,
     hints: *const RivalHints,
-    policy: u32,
+    policy: OutputPolicyCode,
     out_analysis: *mut RivalAnalysis,
     out_converged: *mut bool,
     out_hints: *mut *mut RivalHints,
@@ -304,8 +295,8 @@ pub unsafe extern "C" fn rival_machine_analyze(
     status(|| {
         let machine = unsafe { machine.as_mut() }.ok_or(RivalError::Misuse)?;
         let out_analysis = unsafe { out_analysis.as_mut() }.ok_or(RivalError::Misuse)?;
-        let out_converged = unsafe { out_converged.as_mut() }.ok_or(RivalError::Misuse)?;
-        let out_hints = unsafe { out_hints.as_mut() }.ok_or(RivalError::Misuse)?;
+        let out_converged = unsafe { out_converged.as_mut() };
+        let out_hints = unsafe { out_hints.as_mut() };
         if n_args != machine.n_vars {
             return Err(RivalError::Misuse);
         }
@@ -326,8 +317,12 @@ pub unsafe extern "C" fn rival_machine_analyze(
         } else {
             RivalAnalysis::Valid
         };
-        *out_converged = converged;
-        *out_hints = Box::into_raw(Box::new(RivalHints { hints }));
+        if let Some(out_converged) = out_converged {
+            *out_converged = converged;
+        }
+        if let Some(out_hints) = out_hints {
+            *out_hints = Box::into_raw(Box::new(RivalHints { hints }));
+        }
         Ok(())
     })
 }

@@ -10,8 +10,6 @@
 
 #define RIVAL_ABI_VERSION 3
 
-#define RIVAL_EXPR_INVALID UINT32_MAX
-
 enum RivalError
 #ifdef __cplusplus
   : int32_t
@@ -187,6 +185,8 @@ typedef struct RivalMachine RivalMachine;
 
 typedef struct RivalMachineOptions RivalMachineOptions;
 
+typedef uint32_t RivalExpr;
+
 typedef struct RivalExecution {
     int32_t instruction_idx;
     uint32_t precision;
@@ -194,11 +194,13 @@ typedef struct RivalExecution {
     uint32_t iteration;
 } RivalExecution;
 
+#define RIVAL_EXPR_INVALID UINT32_MAX
+
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
 
-uint32_t rival_abi_version(void);
+uint32_t rival_version(void);
 
 RivalError rival_expr_builder_new(const char *const *vars,
                                   size_t n_vars,
@@ -206,43 +208,43 @@ RivalError rival_expr_builder_new(const char *const *vars,
 
 void rival_expr_builder_free(struct RivalExprBuilder *builder);
 
-uint32_t rival_expr_var(struct RivalExprBuilder *builder, const char *name);
+RivalExpr rival_expr_var(struct RivalExprBuilder *builder, const char *name);
 
-uint32_t rival_expr_f64(struct RivalExprBuilder *builder, double value);
+RivalExpr rival_expr_f64(struct RivalExprBuilder *builder, double value);
 
-uint32_t rival_expr_bigint(struct RivalExprBuilder *builder, const char *value);
+RivalExpr rival_expr_bigint(struct RivalExprBuilder *builder, const char *value);
 
-uint32_t rival_expr_bigrational(struct RivalExprBuilder *builder,
-                                const char *numerator,
-                                const char *denominator);
+RivalExpr rival_expr_bigrational(struct RivalExprBuilder *builder,
+                                 const char *numerator,
+                                 const char *denominator);
 
-uint32_t rival_expr_pi(struct RivalExprBuilder *builder);
+RivalExpr rival_expr_pi(struct RivalExprBuilder *builder);
 
-uint32_t rival_expr_e(struct RivalExprBuilder *builder);
+RivalExpr rival_expr_e(struct RivalExprBuilder *builder);
 
-uint32_t rival_expr_infinity(struct RivalExprBuilder *builder);
+RivalExpr rival_expr_infinity(struct RivalExprBuilder *builder);
 
-uint32_t rival_expr_unary(struct RivalExprBuilder *builder, uint32_t op, uint32_t arg);
+RivalExpr rival_expr_unary(struct RivalExprBuilder *builder, RivalUnaryOp op, RivalExpr arg);
 
-uint32_t rival_expr_unary_param(struct RivalExprBuilder *builder,
-                                uint32_t op,
-                                uint32_t param,
-                                uint32_t arg);
+RivalExpr rival_expr_unary_param(struct RivalExprBuilder *builder,
+                                 RivalUnaryParamOp op,
+                                 uint32_t param,
+                                 RivalExpr arg);
 
-uint32_t rival_expr_binary(struct RivalExprBuilder *builder,
-                           uint32_t op,
-                           uint32_t lhs,
-                           uint32_t rhs);
+RivalExpr rival_expr_binary(struct RivalExprBuilder *builder,
+                            RivalBinaryOp op,
+                            RivalExpr lhs,
+                            RivalExpr rhs);
 
-uint32_t rival_expr_ternary(struct RivalExprBuilder *builder,
-                            uint32_t op,
-                            uint32_t arg1,
-                            uint32_t arg2,
-                            uint32_t arg3);
+RivalExpr rival_expr_ternary(struct RivalExprBuilder *builder,
+                             RivalTernaryOp op,
+                             RivalExpr arg1,
+                             RivalExpr arg2,
+                             RivalExpr arg3);
 
 RivalError rival_machine_new(const struct RivalExprBuilder *builder,
-                             const uint32_t *expr_handles,
-                             const uint32_t *types,
+                             const RivalExpr *expr_handles,
+                             const RivalDiscType *types,
                              size_t n_exprs,
                              const struct RivalMachineOptions *options,
                              struct RivalMachine **out);
@@ -258,12 +260,12 @@ size_t rival_machine_var_count(const struct RivalMachine *machine);
 size_t rival_machine_expr_count(const struct RivalMachine *machine);
 
 RivalError rival_machine_apply(struct RivalMachine *machine,
-                               const mpfr_t *const *args,
+                               const mpfr_srcptr *args,
                                size_t n_args,
                                const struct RivalHints *hints,
                                uint32_t max_iterations,
-                               uint32_t policy,
-                               mpfr_t *const *out,
+                               RivalOutputPolicy policy,
+                               const mpfr_ptr *out,
                                size_t n_out);
 
 RivalError rival_machine_apply_f64(struct RivalMachine *machine,
@@ -271,15 +273,15 @@ RivalError rival_machine_apply_f64(struct RivalMachine *machine,
                                    size_t n_args,
                                    const struct RivalHints *hints,
                                    uint32_t max_iterations,
-                                   uint32_t policy,
+                                   RivalOutputPolicy policy,
                                    double *out,
                                    size_t n_out);
 
 RivalError rival_machine_analyze(struct RivalMachine *machine,
-                                 const mpfr_t *const *rect,
+                                 const mpfr_srcptr *rect,
                                  size_t n_args,
                                  const struct RivalHints *hints,
-                                 uint32_t policy,
+                                 RivalOutputPolicy policy,
                                  RivalAnalysis *out_analysis,
                                  bool *out_converged,
                                  struct RivalHints **out_hints);
@@ -298,13 +300,13 @@ RivalError rival_machine_options_set_profile_capacity(struct RivalMachineOptions
                                                       size_t capacity);
 
 RivalError rival_machine_options_set_strategy(struct RivalMachineOptions *options,
-                                              uint32_t strategy);
+                                              RivalStrategy strategy);
 
 RivalError rival_machine_set_profiling(struct RivalMachine *machine, bool enabled);
 
 bool rival_machine_get_profiling(const struct RivalMachine *machine);
 
-void rival_machine_profiler_reset(struct RivalMachine *machine);
+RivalError rival_machine_profiler_reset(struct RivalMachine *machine);
 
 RivalError rival_machine_profiler_executions(const struct RivalMachine *machine,
                                              struct RivalExecution *out,

@@ -1,22 +1,13 @@
-use crate::{RivalError, status};
-use rival::{Discretization, Execution, MachineBuilder, Strategy};
+use crate::{RivalError, StrategyCode, status};
+use num_enum::TryFromPrimitive;
+use rival::{Discretization, MachineBuilder, Strategy};
 use rug::float::{prec_max, prec_min};
 
 #[repr(u32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromPrimitive)]
 pub enum RivalStrategy {
     Adaptive = 0,
     Baseline = 1,
-}
-
-impl RivalStrategy {
-    fn from_abi(code: u32) -> Option<Self> {
-        Some(match code {
-            0 => Self::Adaptive,
-            1 => Self::Baseline,
-            _ => return None,
-        })
-    }
 }
 
 pub struct RivalMachineOptions {
@@ -115,9 +106,6 @@ pub unsafe extern "C" fn rival_machine_options_set_profile_capacity(
 ) -> RivalError {
     status(|| {
         let options = unsafe { options.as_mut() }.ok_or(RivalError::Misuse)?;
-        if capacity > isize::MAX as usize / size_of::<Execution>() {
-            return Err(RivalError::Misuse);
-        }
         options.profile_capacity = Some(capacity);
         Ok(())
     })
@@ -126,16 +114,14 @@ pub unsafe extern "C" fn rival_machine_options_set_profile_capacity(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rival_machine_options_set_strategy(
     options: *mut RivalMachineOptions,
-    strategy: u32,
+    strategy: StrategyCode,
 ) -> RivalError {
     status(|| {
         let options = unsafe { options.as_mut() }.ok_or(RivalError::Misuse)?;
-        options.strategy = Some(
-            match RivalStrategy::from_abi(strategy).ok_or(RivalError::Misuse)? {
-                RivalStrategy::Adaptive => Strategy::Adaptive,
-                RivalStrategy::Baseline => Strategy::Baseline,
-            },
-        );
+        options.strategy = Some(match RivalStrategy::try_from(strategy)? {
+            RivalStrategy::Adaptive => Strategy::Adaptive,
+            RivalStrategy::Baseline => Strategy::Baseline,
+        });
         Ok(())
     })
 }

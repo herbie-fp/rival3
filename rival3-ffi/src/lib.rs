@@ -4,6 +4,8 @@ mod machine;
 mod options;
 mod profile;
 
+use gmp_mpfr_sys::mpfr::mpfr_t;
+use num_enum::{TryFromPrimitive, TryFromPrimitiveError};
 use rival::RivalError as CoreError;
 use std::slice;
 
@@ -25,10 +27,30 @@ impl From<CoreError> for RivalError {
     }
 }
 
+impl<T: TryFromPrimitive> From<TryFromPrimitiveError<T>> for RivalError {
+    fn from(_: TryFromPrimitiveError<T>) -> Self {
+        Self::Misuse
+    }
+}
+
+pub type UnaryOpCode = u32;
+pub type UnaryParamOpCode = u32;
+pub type BinaryOpCode = u32;
+pub type TernaryOpCode = u32;
+pub type DiscTypeCode = u32;
+pub type StrategyCode = u32;
+pub type OutputPolicyCode = u32;
+
+// MPFR's own pointer types.
+#[allow(non_camel_case_types)]
+pub type mpfr_srcptr = *const mpfr_t;
+#[allow(non_camel_case_types)]
+pub type mpfr_ptr = *mut mpfr_t;
+
 pub const RIVAL_ABI_VERSION: u32 = 3;
 
 #[unsafe(no_mangle)]
-pub extern "C" fn rival_abi_version() -> u32 {
+pub extern "C" fn rival_version() -> u32 {
     RIVAL_ABI_VERSION
 }
 
