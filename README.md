@@ -54,9 +54,10 @@ container. Building the image requires network access; running it does not.
 
 ```sh
 docker build --platform linux/amd64 -t rival3-timing:local .
+mkdir -p result
 ```
 
-`result` is a directory on your host. Both commands below mount it at
+Create `result` once on your host. Both commands below mount it at
 `/output` inside the container, so the generated files remain in `result/`
 after the container exits. Each command clears top-level files from `result/`
 first, including files from a previous run. Use this directory only for
@@ -65,14 +66,12 @@ evaluation outputs.
 ## Kick the tires
 
 ```sh
-mkdir -p result
 rm -f -- result/*
 docker run --rm --network none --mount type=bind,src="$PWD/result",dst=/output \
   rival3-timing:local bash -lc '
     set -euo pipefail
     {
       xz -dc infra/points.json.xz > /tmp/points.json
-      racket infra/smoke-test.rkt
       racket infra/time.rkt --id 4 --dir /output --profile /output/profile.json /tmp/points.json
       python3 infra/ratio_plot.py -t /output/timeline.json -o /output
       python3 infra/histograms.py -t /output/timeline.json -o /output
@@ -84,12 +83,12 @@ docker run --rm --network none --mount type=bind,src="$PWD/result",dst=/output \
   '
 ```
 
-This runs the Racket binding smoke test and then benchmark record `4` (the
-fifth record) against every point in the real dataset. It exercises Rival,
-Sollya, and the optimal precision calculation. Check
-`result/kick-the-tires.log` for the selected expression and the line beginning
-`4:`. It also writes the HTML report, profile, timeline, and all five plot
-pairs (PNG and PDF) to `result/`, using only that benchmark record.
+This runs benchmark record `4` (the fifth record) against every point in the
+real dataset. It exercises Rival, Sollya, and the optimal precision
+calculation. Check `result/kick-the-tires.log` for the selected expression and
+the line beginning `4:`. It also writes the HTML report, profile, timeline,
+and all five plot pairs (PNG and PDF) to `result/`, using only that benchmark
+record.
 
 ## Full evaluation
 
@@ -98,7 +97,6 @@ generates the report and plots; it can take substantially longer than the
 kick-the-tires run.
 
 ```sh
-mkdir -p result
 rm -f -- result/*
 docker run --rm --network none --mount type=bind,src="$PWD/result",dst=/output \
   rival3-timing:local bash -lc '
@@ -139,11 +137,14 @@ Dependency versions are pinned in the [Dockerfile](Dockerfile).
 
 ## Try the Rust CLI
 
-With Rust 1.88 or newer installed, you can try Rival directly from the
-repository root. Pass an expression, its variables, and their input values:
+After building the Docker image above, you can try Rival's CLI without
+installing Rust or its dependencies on your host. Pass an expression, its
+variables, and their input values:
 
 ```sh
-cargo run --bin rival-cli --release -- "(- (sqrt (+ x 1)) 1)" "(x)" "(1e-30)"
+docker run --rm --network none rival3-timing:local \
+  /workspace/target/release/rival-cli \
+  "(- (sqrt (+ x 1)) 1)" "(x)" "(1e-30)"
 ```
 
 You should see a per-instruction table like this (timings vary by machine):
