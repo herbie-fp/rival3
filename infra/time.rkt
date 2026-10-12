@@ -119,6 +119,14 @@
       (define rival-apply-time (- (current-inexact-milliseconds) rival-start-apply))
       (define rival-iter (rival-profile rival-machine 'iterations))
       (define rival-executions (rival-profile rival-machine 'executions))
+
+      ; Iteration indices start at zero, so a positive value means a second pass.
+      (when (and (not tuned-bench)
+                 (or (> rival-iter 0)
+                     (> baseline-iteration 0)
+                     (> ziv-iteration 0)))
+        (set! tuned-bench #t)
+        (*num-tuned-benchmarks* (add1 (*num-tuned-benchmarks*))))
       
       ; --------------------------- Sollya execution ------------------------------------------------
       (when (and sollya-machine (not (equal? rival-status 'invalid)))
@@ -135,10 +143,6 @@
           (set! sollya-exs exs))
         
         ; -------------------------------- Combining results ----------------------------------------
-        (when (and (> ziv-iteration 0) (not tuned-bench))
-          (set! tuned-bench #t)
-          (*num-tuned-benchmarks* (add1 (*num-tuned-benchmarks*))))
-
         (define (executions->max-precisions executions)
           (define max-precisions (make-hash))
           (for ([exec (in-vector executions)]
