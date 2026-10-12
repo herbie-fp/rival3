@@ -5,6 +5,16 @@ timing evaluation comparing Rival with the Ziv+, Ziv, and Sollya evaluators.
 The artifact runs with Docker on Linux amd64; its image includes the benchmark
 data and required tools.
 
+## Unpack the artifact
+
+The distribution consists of this `README.md` and `rival-artifact.tar.xz`.
+Place both files in an empty directory, then run:
+
+```sh
+tar -xJf rival-artifact.tar.xz
+cd rival-artifact
+```
+
 ## Repository map
 
 | Path | Purpose |
@@ -176,7 +186,7 @@ Slight differences are expected for Figure 2, however, the trend should be the s
 
 Almost no significant differences is expected for other figures.
 
-#### RQ1
+##### Claim
 
 > All tools are run on 469 expressions totaling 567459 inputs.
 
@@ -191,6 +201,9 @@ Then, in the same log, find line
 \newcommand{\NumTunedPoints}{...\xspace}
 ```
 The number should be `567459`.
+
+#### RQ1
+##### Claim
 
 > Reval is significantly faster, by 3.97× on average, and its advantage grows with difficulty: for the most difficult evaluations, which require precisions up to 2^14, Reval is 9.26× faster than Sollya.
 
@@ -210,11 +223,21 @@ It is a maximum speedup of Rival over Sollya, the exact number differ from run t
 
 Using `result/ratio_plot_precision.pdf` make sure that Rival curve is above than Ziv and Ziv+ curves. The exact speedup might differ from run to run.
 
+##### Claim
+
 > Reval however, not only retains but grows its advantage, demonstrating that its precision assignment algorithm is largely responsible for its good performance on the most challenging inputs.
 
 Using `result/ratio_plot_precision.pdf` make sure that Rival's curve is getting more above Ziv, Ziv+ and Sollya as precision increases (highest precisions might be noisy).
 
 #### RQ2
+
+##### Claim
+
+> Ziv and Ziv+ use substantially higher precisions than optimal, while Reval’s precision assignments closely track the optimal, even for the most challenging evaluations.
+
+Using `result/optimality_plot.pdf` make sure that Rival is closer to the optimal precision assignments than Ziv and Ziv+ (bars of Ziv and Ziv+ should be higher as precision grows).
+
+##### Claim
 
 > However, Reval’s precision assignment algorithm substantially outperforms both Ziv and Ziv+: 8.01× closer to the optimal precision assignment than Ziv+, and 14.41× closer than Ziv.
 
@@ -225,7 +248,9 @@ Using `result/full-evaluation.log`, find
 ```
 Make sure that these numbers are `14.41` (closer than Ziv) and `8.01` (closer than Ziv+).
 
-> Numerically, Reval executes 43.64% of primitives at 20% of the highest precision per all four tools, while Ziv+ executes 31.93% of primitives, and Ziv performs the worst with 1.06% of primitives. No tool reaches the optimal 50.41% of primitives executed at 20% of the highest prec
+##### Claim
+
+> Numerically, Reval executes 43.64% of primitives at 20% of the highest precision per all four tools, while Ziv+ executes 31.93% of primitives, and Ziv performs the worst with 1.06% of primitives. No tool reaches the optimal 50.41% of primitives executed at 20% of the highest precision
 
 Using `result/full-evaluation.log`, find: 
 ```
@@ -238,6 +263,8 @@ The numbers should be: `43.64`, `31.93`, `1.06`, `50.41`. Minor difference is un
 
 #### RQ3
 
+##### Claim
+
 > after two iterations, 59.05% of Reval’s inputs have converged while only 32.38% of Ziv+’s have, with Ziv performing about the same.
 
 Using `result/full-evaluation.log`, find:
@@ -247,6 +274,8 @@ Using `result/full-evaluation.log`, find:
 ```
 These numbers should be: `59.05` and `32.38`, minor difference is possible, our latest run produced `59.07` and `32.39`.
 
+##### Claim
+
 > This leads to a radical reduction in the number of primitive computations needed by Reval: 31.7% fewer than Ziv+, 62.16% fewer than Ziv.
 
 Using `result/full-evaluation.log`, find:
@@ -255,6 +284,8 @@ Using `result/full-evaluation.log`, find:
 \newcommand{\RivalInstrCountLessThanZiv}{...}
 ```
 The numbers should be `31.7` and `62.16`, minor difference is possible.
+
+##### Claim
 
 > The right most “tuning” column also shows that precision tuning itself is very fast — about 2.6% of total runtime.
 
