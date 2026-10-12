@@ -131,6 +131,10 @@ files; the plots remain available directly as PNG and PDF files.
 If the command exits successfully and the HTML and five plot PNG/PDF pairs are
 present in `result/`, the kick-the-tires check passed.
 
+For an additional visual check, compare each PDF in `result/` with the PDF of
+the same name in `kick_the_tires_reference/`. Minor differences between machines
+are expected, but the overall trends should match.
+
 ## Full evaluation (may take hours)
 
 Run this on native Linux amd64. It processes every benchmark record, evaluates
