@@ -68,10 +68,10 @@ with 32 GB of RAM.
 
 ## Build the Docker image
 
-Run these commands from the repository root. You need Docker and enough space
-inside the container for the expanded benchmark input (about 460 MiB).
-Building the image requires network access; running it does not.
-The reference image was built with Docker 29.9.0 (build f415da8).
+Run these commands from the repository root. Install Docker if you do not have
+it yet; the artifact was tested with Docker 29.9.0 (build f415da8). You also
+need enough space inside the container for the expanded benchmark input (about
+460 MiB). Building the image requires network access; running it does not.
 
 ```sh
 docker build --platform linux/amd64 -t rival-artifact .
@@ -137,6 +137,9 @@ all five plots appear. The corresponding PNG and PDF files should also be in
 `result/`. Some browsers block the profiling widget from loading local JSON
 files; the plots remain available directly as PNG and PDF files.
 
+If the command exits successfully and the HTML and five plot PNG/PDF pairs are
+present in `result/`, the kick-the-tires check passed.
+
 ## Full evaluation (may take hours)
 
 Run this on native Linux amd64. It processes every benchmark record, evaluates
@@ -185,6 +188,8 @@ The mappings are:
 Slight differences are expected for Figure 2, however, the trend should be the same: Rival should outperform other tools.
 
 Almost no significant differences is expected for other figures.
+
+The following paper claims can be checked against the generated results:
 
 ##### Claim
 
