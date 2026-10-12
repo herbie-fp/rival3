@@ -1,4 +1,4 @@
-# Rival (paper name is Reval, they mean the same thing)
+# Rival (called Reval in the paper)
 
 Rival evaluates real expressions to high precision. This repository contains a
 timing evaluation comparing Rival with the Ziv+, Ziv, and Sollya evaluators.
