@@ -145,7 +145,7 @@ For an additional visual check, compare each PDF in `result/` with the PDF of
 the same name in `kick_the_tires_reference/`. Minor differences between machines
 are expected, but the overall trends should match.
 
-## Full evaluation (may take hours)
+## Full evaluation (about 4–5 hours)
 
 Run this on native Linux amd64. It processes every benchmark record, evaluates
 Rival, Ziv+, Ziv, and Sollya, calculates optimal precision, and generates the
@@ -210,7 +210,7 @@ Then, in the same log, find line
 ```
 \newcommand{\NumTunedPoints}{...\xspace}
 ```
-The number should be `567459` (possibly can be slightly less or greater depending on timeouts).
+The number should be `567459` (possibly can be slightly less or greater depending on timeouts - timed out points are not considered in evaluation).
 
 #### RQ1
 ##### Claim
