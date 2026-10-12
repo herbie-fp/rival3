@@ -54,8 +54,10 @@ cd rival-artifact
 The artifact was built and evaluated on a machine with an Intel Core i7-8700
 CPU at 3.7 GHz, 32 GB of DDR4 RAM, and Ubuntu 24.04.2 LTS (Linux x86-64).
 
-The evaluation requires no special hardware beyond a standard x86-64 machine
-with 32 GB of RAM.
+For the full evaluation and comparable timing results, use a native Linux
+x86-64 machine with 32 GB of RAM; no specialized hardware is needed. An Apple
+Silicon Mac can run the image under emulation for kick-the-tires checks, but
+its timings are not comparable to native x86-64 measurements.
 
 ## Build the Docker image
 
@@ -68,6 +70,14 @@ need enough space inside the container for the expanded benchmark input (about
 docker build --platform linux/amd64 -t rival-artifact .
 mkdir -p result
 ```
+
+On an Apple Silicon Mac, OrbStack runs this `linux/amd64` image under emulation.
+If Rosetta is enabled, Racket may abort with the `petite` startup error. In
+OrbStack, turn off **Settings → System → Use Rosetta to run Intel code** before
+building or running the image, and restart OrbStack if prompted. The fallback
+is slower; use native Linux amd64 for timing comparisons. See
+[OrbStack's settings guide](https://docs.orbstack.dev/settings) for the Rosetta
+option.
 
 The image uses these versions on Linux amd64:
 
