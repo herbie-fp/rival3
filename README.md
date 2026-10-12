@@ -48,11 +48,20 @@ data and required tools.
 | `src/interval/pow.rs` | Power operations |
 | `src/interval/trig.rs` | Trigonometric operations |
 
+## Hardware requirements
+
+The artifact was built and evaluated on a machine with an Intel Core i7-8700
+CPU at 3.7 GHz, 32 GB of DDR4 RAM, and Ubuntu 24.04.2 LTS (Linux x86-64).
+
+The evaluation requires no special hardware beyond a standard x86-64 machine
+with 32 GB of RAM.
+
 ## Build the Docker image
 
 Run these commands from the repository root. You need Docker and enough space
 inside the container for the expanded benchmark input (about 460 MiB).
 Building the image requires network access; running it does not.
+The reference image was built with Docker 29.9.0 (build f415da8).
 
 ```sh
 docker build --platform linux/amd64 -t rival-artifact .
