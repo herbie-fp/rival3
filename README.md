@@ -188,19 +188,19 @@ The following paper claims can be checked against the generated results:
 
 ##### Claim
 
-> All tools are run on 469 expressions totaling 567459 inputs.
+> All tools are run on 457 expressions totaling 567156 inputs.
 
 Use `result/full-evaluation.log`, scroll to the bottom and find
 ```
 NUMBER OF TUNED BENCHMARKS = ...
 ```
-The number should be `469`.
+The number should be `457`.
 
 Then, in the same log, find line 
 ```
 \newcommand{\NumTunedPoints}{...\xspace}
 ```
-The number should be `567459`.
+The number should be `567156` (possibly can be slightly less or greater depending on timeouts).
 
 #### RQ1
 ##### Claim
