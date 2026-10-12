@@ -31,9 +31,6 @@ cd rival-artifact
 
 | Path | Purpose |
 | --- | --- |
-| `src/lib.rs` | Public library API and usage examples |
-| `src/bin/main.rs` | `rival-cli` argument parsing and output |
-| `src/mpfr.rs` | Low-level MPFR wrappers |
 | `src/eval/mod.rs` | Evaluator module wiring |
 | `src/eval/machine.rs` | Expression compilation and register-machine setup |
 | `src/eval/run.rs` | Main evaluation loop and convergence checks |
@@ -41,22 +38,16 @@ cd rival-artifact
 | `src/eval/profile.rs` | Per-instruction execution profiles |
 | `src/eval/instructions.rs` | Register-machine instruction types |
 | `src/eval/execute.rs` | Execution of individual instructions |
-| `src/eval/ops.rs` | Expression operations and optimization rules |
+| `src/eval/ops.rs` | Expression operations and exponent tricks |
 | `src/eval/macros.rs` | Macros that generate operation dispatch |
 | `src/eval/tricks.rs` | Precision-bound calculations |
 | `src/eval/adjust/mod.rs` | Adaptive precision adjustment and path reduction |
 | `src/eval/adjust/precision.rs` | Per-instruction precision tuning |
 | `src/eval/adjust/path_reduction.rs` | Skipping or simplifying unneeded computation paths |
-| `src/interval/mod.rs` | Interval module wiring and exports |
-| `src/interval/value.rs` | Interval values, endpoints, and error flags |
-| `src/interval/core.rs` | Shared interval operations and helpers |
-| `src/interval/arithmetic.rs` | Basic arithmetic and related operations |
-| `src/interval/boolean.rs` | Boolean intervals, comparisons, and conditionals |
-| `src/interval/constants.rs` | Mathematical constants |
-| `src/interval/fmod.rs` | Remainder operations |
-| `src/interval/gamma.rs` | Gamma and log-gamma operations |
-| `src/interval/pow.rs` | Power operations |
-| `src/interval/trig.rs` | Trigonometric operations |
+| `src/lib.rs` | Public library API and usage examples |
+| `src/bin/main.rs` | `rival-cli` argument parsing and output |
+| `src/mpfr.rs` | Low-level MPFR wrappers |
+| `src/interval/*` | Interval arithemtic library |
 
 ## Hardware requirements
 
