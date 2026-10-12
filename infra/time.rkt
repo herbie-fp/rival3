@@ -72,6 +72,7 @@
                                     #f)])
          (sollya-compile exprs vars minimal-precision))])) ; prec=53 is an imitation of flonum
 
+  (define sollya-compiled? (if sollya-machine #t #f))
   (define tuned-bench #f)
   (define times
     (for/list ([pt* (in-list (hash-ref rec 'points))])
@@ -121,7 +122,8 @@
       (define rival-executions (rival-profile rival-machine 'executions))
 
       ; Iteration indices start at zero, so a positive value means a second pass.
-      (when (and (not tuned-bench)
+      (when (and sollya-compiled?
+                 (not tuned-bench)
                  (or (> rival-iter 0)
                      (> baseline-iteration 0)
                      (> ziv-iteration 0)))
