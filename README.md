@@ -5,14 +5,21 @@ timing evaluation comparing Rival with the Ziv+, Ziv, and Sollya evaluators.
 The artifact runs with Docker on Linux amd64; its image includes the benchmark
 data and required tools.
 
-## Unpack the artifact
+## Get the artifact
 
-The distribution consists of this `README.md` and `rival-artifact.zip`.
-Place both files in an empty directory, then run:
+We attempted multiple uploads to Zenodo; uploads complete but remain pending
+and are deleted during processing. The artifact is available at commit
+`8413b8ef52da4a98b1894411c536afc682319b19` and will be archived once the
+repository service issue is resolved.
+
+After that commit is available on GitHub, download the exact `popl-eval`
+snapshot with:
 
 ```sh
-unzip rival-artifact.zip
-cd rival-artifact
+git clone https://github.com/herbie-fp/rival3.git
+cd rival3
+git fetch origin popl-eval
+git checkout --detach 8413b8ef52da4a98b1894411c536afc682319b19
 ```
 
 ## Repository map
