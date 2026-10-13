@@ -8,18 +8,17 @@ data and required tools.
 ## Get the artifact
 
 We attempted multiple uploads to Zenodo; uploads complete but remain pending
-and are deleted during processing. The artifact is available at commit
-`8413b8ef52da4a98b1894411c536afc682319b19` and will be archived once the
-repository service issue is resolved.
+and are deleted during processing. The artifact source is available at the `popl-eval` commit,
+[`b33204c63d42adf93b60b4db3189846786d09f11`](https://github.com/herbie-fp/rival3/tree/b33204c63d42adf93b60b4db3189846786d09f11),
+and will be archived once the repository service issue is resolved.
 
-After that commit is available on GitHub, download the exact `popl-eval`
-snapshot with:
+Download that exact `popl-eval` snapshot with:
 
 ```sh
 git clone https://github.com/herbie-fp/rival3.git
 cd rival3
 git fetch origin popl-eval
-git checkout --detach 8413b8ef52da4a98b1894411c536afc682319b19
+git checkout --detach b33204c63d42adf93b60b4db3189846786d09f11
 ```
 
 ## Repository map
