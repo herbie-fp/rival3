@@ -7,11 +7,11 @@ data and required tools.
 
 ## Unpack the artifact
 
-The distribution consists of this `README.md` and `rival-artifact.tar.xz`.
+The distribution consists of this `README.md` and `rival-artifact.zip`.
 Place both files in an empty directory, then run:
 
 ```sh
-tar -xJf rival-artifact.tar.xz
+unzip rival-artifact.zip
 cd rival-artifact
 ```
 
@@ -47,7 +47,7 @@ cd rival-artifact
 | `src/lib.rs` | Public library API and usage examples |
 | `src/bin/main.rs` | `rival-cli` argument parsing and output |
 | `src/mpfr.rs` | Low-level MPFR wrappers |
-| `src/interval/*` | Interval arithemtic library |
+| `src/interval/*` | Interval arithmetic library |
 
 ## Hardware requirements
 
@@ -204,7 +204,8 @@ Use `result/full-evaluation.log`, scroll to the bottom and find
 ```
 NUMBER OF TUNED BENCHMARKS = ...
 ```
-The number should be `469`.
+The paper's count is outdated. The correct number of benchmarks should be `482`;
+we will update the paper before uploading it.
 
 Then, in the same log, find line 
 ```
