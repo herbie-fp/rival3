@@ -5,6 +5,22 @@ timing evaluation comparing Rival with the Ziv+, Ziv, and Sollya evaluators.
 The artifact runs with Docker on Linux amd64; its image includes the benchmark
 data and required tools.
 
+## Get the artifact
+
+We attempted multiple uploads to Zenodo; uploads complete but remain pending
+and are deleted during processing. The artifact source is available at the `popl-eval` commit,
+[`f543a7ef0cdb51bb754ba00290cd54fdcffe4e22`](https://github.com/herbie-fp/rival3/tree/f543a7ef0cdb51bb754ba00290cd54fdcffe4e22),
+and will be archived once the repository service issue is resolved.
+
+Download that exact `popl-eval` snapshot with:
+
+```sh
+git clone https://github.com/herbie-fp/rival3.git
+cd rival3
+git fetch origin popl-eval
+git checkout --detach f543a7ef0cdb51bb754ba00290cd54fdcffe4e22
+```
+
 ## Repository map
 
 | Path | Purpose |
