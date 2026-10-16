@@ -57,6 +57,7 @@ pub struct Machine<D: Discretization> {
 
     // Program structure.
     pub(crate) arguments: Vec<String>,
+    pub(crate) expressions: Vec<Expr>,
     pub(crate) instructions: Vec<Instruction>,
     pub(crate) outputs: Vec<usize>,
 
@@ -207,7 +208,7 @@ impl<D: Discretization> MachineBuilder<D> {
     /// on a specific point.
     pub fn build(self, exprs: Vec<Expr>, vars: Vec<String>) -> Machine<D> {
         // Optimize and lower expressions to instructions.
-        let optimized_exprs = exprs.into_iter().map(ops::optimize_expr).collect();
+        let optimized_exprs = exprs.iter().cloned().map(ops::optimize_expr).collect();
         let (instructions_map, roots) = lower(optimized_exprs, &vars);
         let var_count = vars.len();
         let instruction_count = instructions_map.len();
@@ -250,6 +251,7 @@ impl<D: Discretization> MachineBuilder<D> {
         Machine {
             disc: self.disc,
             arguments: vars,
+            expressions: exprs,
             instructions,
             outputs: roots,
             initial_repeats,
