@@ -131,7 +131,9 @@
         (*total-count* (add1 (*total-count*)))
 
         (when (not (equal? 0 (rival-profile rival-machine 'bumps)))
-          (println "BUMPS HELPED")))
+          (println "BUMPS HELPED")
+          (printf "Point: ~s\n" pt)
+          (printf "Expressions: ~s\n" exprs)))
       
       ;; ; --------------------------- Sollya execution ------------------------------------------------
       ;; (when (and sollya-machine (not (equal? rival-status 'invalid)))
