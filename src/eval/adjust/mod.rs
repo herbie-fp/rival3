@@ -144,7 +144,6 @@ fn backward_pass<D: Discretization>(machine: &mut Machine<D>, hints: &[Hint]) ->
         // Bumps mode adds precision based on interval width (logspan) rather than slack.
         machine.bumps = machine.bumps.saturating_add(1);
         machine.bumps_activated = true;
-        print_bump_diagnostics(machine, hints, &work_repeats, &vprecs_max, &vprecs_min);
         // Reset and recalculate precisions for bumps mode.
         vprecs_max.fill(0);
         work_repeats.fill(false);
@@ -159,12 +158,10 @@ fn backward_pass<D: Discretization>(machine: &mut Machine<D>, hints: &[Hint]) ->
         }
         any_reevaluation =
             update_repeats(machine, &mut work_repeats, &vprecs_max, first_tuning_pass);
-        eprintln!(
-            "[rival bump] after tuning: requested_upper={vprecs_max:?} requested_lower={vprecs_min:?} repeats={work_repeats:?} reevaluation={any_reevaluation}"
-        );
         if !any_reevaluation {
-            // Machine got stuck.
-            return true;
+	    // Machine got stuck
+	    // work_repeats.fill(true);
+            return true
         }
     }
 
@@ -183,68 +180,4 @@ fn backward_pass<D: Discretization>(machine: &mut Machine<D>, hints: &[Hint]) ->
         });
     }
     false
-}
-
-/// Capture the state that led to a logspan bump, before bump tuning changes it.
-fn print_bump_diagnostics<D: Discretization>(
-    machine: &Machine<D>,
-    hints: &[Hint],
-    repeats: &[bool],
-    requested_upper: &[u32],
-    requested_lower: &[u32],
-) {
-    eprintln!(
-        "[rival bump] count={} iteration={} target_precision={} min_precision={} max_precision={} slack_unit={} lower_bound_early_stopping={} tuning_slack_uses={} tuning_precision_assignments={}",
-        machine.bumps,
-        machine.iteration,
-        machine.disc.target(),
-        machine.min_precision,
-        machine.max_precision,
-        machine.slack_unit,
-        machine.lower_bound_early_stopping,
-        machine.tuning_slack_uses,
-        machine.tuning_precision_assignments,
-    );
-    for (idx, (name, value)) in machine
-        .arguments
-        .iter()
-        .zip(machine.registers.iter())
-        .enumerate()
-    {
-        eprintln!(
-            "[rival bump] point[{idx}] {name} = [{}, {}] (endpoint_bits=[{}, {}], interval={value:?})",
-            value.lo.as_float().to_string_radix(16, None),
-            value.hi.as_float().to_string_radix(16, None),
-            value.lo.as_float().prec(),
-            value.hi.as_float().prec(),
-        );
-    }
-    for (idx, (expr, &reg)) in machine
-        .expressions
-        .iter()
-        .zip(machine.outputs.iter())
-        .enumerate()
-    {
-        eprintln!(
-            "[rival bump] output[{idx}] expression={expr:?} register={reg} boundary_issue={} value={:?}",
-            machine.output_distance[idx], machine.registers[reg],
-        );
-    }
-    eprintln!(
-        "[rival bump] before tuning: initial_precisions={:?} current_precisions={:?} best_known_precisions={:?}",
-        machine.initial_precisions, machine.precisions, machine.best_known_precisions,
-    );
-    eprintln!(
-        "[rival bump] before tuning: initial_repeats={:?} current_repeats={:?} requested_upper={requested_upper:?} requested_lower={requested_lower:?} repeats={repeats:?}",
-        machine.initial_repeats, machine.repeats,
-    );
-    for (idx, instruction) in machine.instructions.iter().enumerate() {
-        eprintln!(
-            "[rival bump] instruction[{idx}] out={} data={:?} hint={:?} value={:?}",
-            instruction.out,
-            instruction.data,
-            hints[idx],
-            machine.registers[machine.instruction_register(idx)],
-        );
-    }
 }
