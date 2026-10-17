@@ -179,8 +179,10 @@ def_ops! {
 
         Acos: {
             method: acos_assign,
-            bounds: |ctx, _out, inp| {
-                let upper = if ctx.maxlog(inp, false) >= 0 { get_slack(ctx.iteration, ctx.slack_unit) } else { 0 };
+            bounds: |ctx, out, inp| {
+                let maxlog_inp = ctx.maxlog(inp, false);
+                let slack = if maxlog_inp >= 0 { get_slack(ctx.iteration, ctx.slack_unit) } else { 0 };
+                let upper = maxlog_inp - ctx.minlog(out, false) + slack;
                 AmplBounds::new(upper, 0)
             },
         },
