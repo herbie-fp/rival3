@@ -3,7 +3,8 @@ use crate::mpfr::{
     mpfr_add, mpfr_div, mpfr_fmod, mpfr_max, mpfr_min, mpfr_mul, mpfr_neg, mpfr_remainder,
     mpfr_round, mpfr_sign, mpfr_sub, mpfr_trunc, zero,
 };
-use rug::{Assign, Float, float::Round};
+use rug::{Assign, Float, float::Round, ops::AssignRound};
+use std::cmp::Ordering;
 
 impl Ival {
     /// Compute the interval floating-point remainder `fmod(x, y)`.
@@ -112,6 +113,16 @@ impl Ival {
         let x_hi = x.hi.as_float();
         let y_lo = y.lo.as_float();
         let y_hi = y.hi.as_float();
+
+        // Every quotient is below one, so the remainder is x. Compare
+        // endpoints directly: a rounded division could spuriously reach one.
+        if x_hi < y_lo {
+            let lo_rounding = self.lo.as_float_mut().assign_round(x_lo, Round::Down);
+            let hi_rounding = self.hi.as_float_mut().assign_round(x_hi, Round::Up);
+            self.lo.immovable = x.lo.immovable && lo_rounding == Ordering::Equal;
+            self.hi.immovable = x.hi.immovable && hi_rounding == Ordering::Equal;
+            return;
+        }
 
         let mut tmp_div = zero(prec);
         mpfr_div(x_lo, y_hi, &mut tmp_div, Round::Down);
@@ -254,5 +265,66 @@ impl Ival {
             self.hi.as_float_mut().assign(&y_half);
             self.hi.immovable = false;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::interval::ErrorFlags;
+
+    #[test]
+    fn fmod_below_divisor_rounds_outward_for_either_sign() {
+        let lo = Float::with_val(100, 1) - (Float::with_val(100, 1) >> 59u32);
+        let hi = Float::with_val(100, 1) - (Float::with_val(100, 1) >> 80u32);
+        for negate_x in [false, true] {
+            for negate_y in [false, true] {
+                let mut x = Ival::from_lo_hi(lo.clone(), hi.clone());
+                x.set_immovable(true, true);
+                if negate_x {
+                    x.neg_inplace();
+                }
+                let divisor = if negate_y { -1 } else { 1 };
+                let mut y = Ival::from_lo_hi(
+                    Float::with_val(100, divisor),
+                    Float::with_val(100, divisor),
+                );
+                y.set_error_flags(ErrorFlags::new(true, false));
+                let mut result = Ival::zero(60);
+                result.fmod_assign(&x, &y);
+
+                let expected_lo = if negate_x {
+                    Float::with_val(60, -1)
+                } else {
+                    lo.clone()
+                };
+                let expected_hi = if negate_x {
+                    -lo.clone()
+                } else {
+                    Float::with_val(60, 1)
+                };
+                assert_eq!(result.lo(), &expected_lo);
+                assert_eq!(result.hi(), &expected_hi);
+                assert_eq!(result.prec(), 60);
+                assert_eq!(result.lo_immovable(), !negate_x);
+                assert_eq!(result.hi_immovable(), negate_x);
+                assert!(result.error_flags().partial());
+                assert!(!result.error_flags().total());
+            }
+        }
+    }
+
+    #[test]
+    fn fmod_at_divisor_keeps_the_discontinuity() {
+        let y = Ival::from_lo_hi(Float::with_val(100, 1), Float::with_val(100, 1));
+        let mut result = Ival::zero(60);
+        result.fmod_assign(&y, &y);
+        assert_eq!(result.lo(), &0);
+        assert_eq!(result.hi(), &0);
+
+        let x = Ival::from_lo_hi(Float::with_val(100, 0.75), Float::with_val(100, 1));
+        result.fmod_assign(&x, &y);
+        assert_eq!(result.lo(), &0);
+        assert_eq!(result.hi(), &1);
     }
 }
