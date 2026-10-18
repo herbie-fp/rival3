@@ -126,7 +126,6 @@ pub struct MachineBuilder<D: Discretization> {
     max_precision: u32,
     slack_unit: i64,
     base_tuning_precision: u32,
-    ampl_tuning_bits: u32,
     profile_capacity: usize,
     profiling_enabled: bool,
     logspan_enabled: bool,
@@ -139,6 +138,7 @@ impl<D: Discretization> MachineBuilder<D> {
     /// - `min_precision`: 20 bits
     /// - `max_precision`: 10,000 bits
     /// - `slack_unit`: 512
+    /// - `base_tuning_precision`: 6 bits
     /// - `profiling`: enabled, buffer capacity 1000
     /// - `logspan`: disabled initially, enabled automatically if tuning stalls
     pub fn new(disc: D) -> Self {
@@ -147,8 +147,7 @@ impl<D: Discretization> MachineBuilder<D> {
             min_precision: 20,
             max_precision: 10_000,
             slack_unit: 53,
-            base_tuning_precision: 5,
-            ampl_tuning_bits: 2,
+            base_tuning_precision: 6,
             profile_capacity: 1000,
             profiling_enabled: true,
             logspan_enabled: false,
@@ -176,12 +175,6 @@ impl<D: Discretization> MachineBuilder<D> {
     /// Set the base tuning precision added to discretization targets.
     pub fn base_tuning_precision(mut self, v: u32) -> Self {
         self.base_tuning_precision = v;
-        self
-    }
-
-    /// Set the amplification tuning bits added during propagation.
-    pub fn ampl_tuning_bits(mut self, v: u32) -> Self {
-        self.ampl_tuning_bits = v;
         self
     }
 
@@ -240,7 +233,6 @@ impl<D: Discretization> MachineBuilder<D> {
             &roots,
             &self.disc,
             self.base_tuning_precision,
-            self.ampl_tuning_bits,
         );
 
         let initial_repeats = make_initial_repeats(
@@ -469,15 +461,28 @@ pub(crate) fn lower(
 }
 
 /// Determine initial precision targets for each instruction.
+/// Edges add two bits, except the strictly deeper input of a binary operation,
+/// which adds one bit. Depth is subexpression height in the lowered graph.
 fn make_initial_precisions<D: Discretization>(
     instructions: &[Instruction],
     var_count: usize,
     roots: &[usize],
     disc: &D,
     base_tuning_precision: u32,
-    ampl_tuning_bits: u32,
 ) -> Vec<u32> {
     let mut precisions = vec![0u32; instructions.len()];
+
+    // Instructions are in dependency order. Variables and constants have depth zero.
+    let mut depths = vec![0usize; var_count + instructions.len()];
+    for instruction in instructions {
+        let mut depth = 0;
+        instruction.for_each_input(|reg| {
+            if reg != instruction.out {
+                depth = depth.max(depths[reg] + 1);
+            }
+        });
+        depths[instruction.out] = depth;
+    }
 
     // Initialize output nodes to target + base precision.
     for &root in roots.iter() {
@@ -489,15 +494,21 @@ fn make_initial_precisions<D: Discretization>(
     // Propagate precisions backward through the computation graph.
     for idx in (0..instructions.len()).rev() {
         let current_prec = precisions[idx];
-        instructions[idx].for_each_input(|reg| {
+        let mut propagate = |reg: usize, increment: u32| {
             if reg >= var_count {
                 let input_idx = reg - var_count;
                 if input_idx != idx {
-                    precisions[input_idx] =
-                        precisions[input_idx].max(current_prec + ampl_tuning_bits);
+                    precisions[input_idx] = precisions[input_idx].max(current_prec + increment);
                 }
             }
-        });
+        };
+        match &instructions[idx].data {
+            InstructionData::Binary { lhs, rhs, .. } => {
+                propagate(*lhs, if depths[*lhs] > depths[*rhs] { 1 } else { 2 });
+                propagate(*rhs, if depths[*rhs] > depths[*lhs] { 1 } else { 2 });
+            }
+            _ => instructions[idx].for_each_input(|reg| propagate(reg, 2)),
+        }
     }
 
     precisions
