@@ -344,20 +344,57 @@ fn display_table(execs: &[Execution], num_iterations: usize) {
     table.print(display_data);
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct CliArgs<'a> {
+    expr: &'a str,
+    vars: &'a str,
+    values: &'a str,
+    logspan: bool,
+}
+
+fn parse_cli_args(args: &[String]) -> Result<CliArgs<'_>, String> {
+    let mut positional = Vec::new();
+    let mut logspan = false;
+    for arg in args {
+        match arg.as_str() {
+            "--logspan" => logspan = true,
+            flag if flag.starts_with("--")
+                || (flag.starts_with('-')
+                    && flag.parse::<f64>().is_err()
+                    && flag.parse::<Rational>().is_err()) =>
+            {
+                return Err(format!("Unknown flag: {flag}"));
+            }
+            value => positional.push(value),
+        }
+    }
+    let [expr, vars, values] = positional.as_slice() else {
+        return Err("Expected an expression, variables, and input values".to_string());
+    };
+    Ok(CliArgs {
+        expr,
+        vars,
+        values,
+        logspan,
+    })
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
-    if args.len() != 4 {
-        eprintln!("Usage: {} <expr> <vars> <values>", args[0]);
+    let options = parse_cli_args(&args[1..]).unwrap_or_else(|error| {
+        eprintln!("{error}");
+        eprintln!("Usage: {} [--logspan] <expr> <vars> <values>", args[0]);
+        eprintln!("  --logspan  Calculate logspan from the first tuning pass (default: only after tuning stalls)");
         eprintln!(
             "Example: {} \"(* (+ 2 (pow x y)) 23/43)\" \"(x y)\" \"(1e-25 5.0)\"",
             args[0]
         );
         std::process::exit(1);
-    }
+    });
 
-    let expr_str = &args[1];
-    let vars_str = &args[2];
-    let values_str = &args[3];
+    let expr_str = options.expr;
+    let vars_str = options.vars;
+    let values_str = options.values;
 
     let vars = parse_vars(vars_str).unwrap_or_else(|e| {
         eprintln!("Error parsing variables: {}", e);
@@ -385,6 +422,7 @@ fn main() {
     });
 
     let mut machine = MachineBuilder::new(Fp64Discretization)
+        .enable_logspan(options.logspan)
         .enable_profiling(true)
         .max_precision(10000)
         .build(vec![expr], vars);
