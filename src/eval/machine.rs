@@ -138,7 +138,7 @@ impl<D: Discretization> MachineBuilder<D> {
     /// - `min_precision`: 20 bits
     /// - `max_precision`: 10,000 bits
     /// - `slack_unit`: 512
-    /// - `base_tuning_precision`: 6 bits
+    /// - `base_tuning_precision`: 5 bits
     /// - `profiling`: enabled, buffer capacity 1000
     /// - `logspan`: disabled initially, enabled automatically if tuning stalls
     pub fn new(disc: D) -> Self {
@@ -147,7 +147,7 @@ impl<D: Discretization> MachineBuilder<D> {
             min_precision: 20,
             max_precision: 10_000,
             slack_unit: 53,
-            base_tuning_precision: 6,
+            base_tuning_precision: 5,
             profile_capacity: 1000,
             profiling_enabled: true,
             logspan_enabled: false,
@@ -461,8 +461,9 @@ pub(crate) fn lower(
 }
 
 /// Determine initial precision targets for each instruction.
-/// Edges add two bits, except the strictly deeper input of a binary operation,
-/// which adds one bit. Depth is subexpression height in the lowered graph.
+/// Unary edges add one bit. Binary and ternary edges add two and three bits,
+/// respectively, except a uniquely deepest input adds one bit.
+/// Depth is subexpression height in the lowered graph.
 fn make_initial_precisions<D: Discretization>(
     instructions: &[Instruction],
     var_count: usize,
@@ -507,7 +508,19 @@ fn make_initial_precisions<D: Discretization>(
                 propagate(*lhs, if depths[*lhs] > depths[*rhs] { 1 } else { 2 });
                 propagate(*rhs, if depths[*rhs] > depths[*lhs] { 1 } else { 2 });
             }
-            _ => instructions[idx].for_each_input(|reg| propagate(reg, 2)),
+            InstructionData::Ternary {
+                arg1, arg2, arg3, ..
+            } => {
+                for (arg, other1, other2) in [
+                    (*arg1, *arg2, *arg3),
+                    (*arg2, *arg1, *arg3),
+                    (*arg3, *arg1, *arg2),
+                ] {
+                    let uniquely_deepest = depths[arg] > depths[other1].max(depths[other2]);
+                    propagate(arg, if uniquely_deepest { 1 } else { 3 });
+                }
+            }
+            _ => instructions[idx].for_each_input(|reg| propagate(reg, 1)),
         }
     }
 
