@@ -134,33 +134,12 @@ fn backward_pass<D: Discretization>(machine: &mut Machine<D>, hints: &[Hint]) ->
     }
 
     // Step 3: Update repeats based on new precisions.
-    let mut any_reevaluation =
+    let any_reevaluation =
         update_repeats(machine, &mut work_repeats, &vprecs_max, first_tuning_pass);
 
-    // Step 4: If no precision increase, try logspan bumps.
+    // Step 4: Stop if tuning schedules no reevaluation.
     if !any_reevaluation {
-        // Bumps mode adds precision based on interval width (logspan) rather than slack.
-        machine.bumps = machine.bumps.saturating_add(1);
-        machine.bumps_activated = true;
-        // Reset and recalculate precisions for bumps mode.
-        vprecs_max.fill(0);
-        work_repeats.fill(false);
-        if precision_tuning(
-            machine,
-            hints,
-            &work_repeats,
-            &mut vprecs_max,
-            &mut vprecs_min,
-        ) {
-            return true;
-        }
-        any_reevaluation =
-            update_repeats(machine, &mut work_repeats, &vprecs_max, first_tuning_pass);
-        if !any_reevaluation {
-            // Machine got stuck
-            // work_repeats.fill(true);
-            return true;
-        }
+        return true;
     }
 
     // Step 5: Update machine state.

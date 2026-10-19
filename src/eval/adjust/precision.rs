@@ -18,7 +18,7 @@ pub(super) fn precision_tuning<D: Discretization>(
     let ctx = TrickContext::new(
         machine.iteration,
         machine.lower_bound_early_stopping,
-        machine.logspan_enabled || machine.bumps_activated,
+        machine.logspan_enabled,
         machine.slack_unit,
     );
 

@@ -114,7 +114,7 @@ impl TrickContext {
         ops::bounds_for_unary_param(self, op, param, output, input)
     }
 
-    /// Estimate exponent span when explicitly enabled or activated by bumps mode.
+    /// Estimate exponent span when explicitly enabled.
     pub fn logspan(&self, value: &Ival) -> i64 {
         if !self.bumps_enabled {
             return 0;
