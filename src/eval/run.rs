@@ -259,6 +259,7 @@ impl<D: Discretization> Machine<D> {
             self.registers[i] = arg;
         }
         self.bumps = 0;
+        self.bumps_activated = false;
         self.iteration = 0;
         self.precisions.fill(0);
         self.repeats.fill(false);

@@ -73,7 +73,7 @@ pub struct Machine<D: Discretization> {
     pub(crate) output_distance: Vec<bool>, // true = output near discretization boundary
 
     pub(crate) iteration: usize,
-    pub(crate) bumps: usize, // Retained for profiling compatibility; always zero without fallback.
+    pub(crate) bumps: usize, // Number of times bumps mode has been activated
 
     // Profiling.
     pub(crate) profiler: Profiler,
@@ -85,6 +85,7 @@ pub struct Machine<D: Discretization> {
     pub(crate) lower_bound_early_stopping: bool,
     pub(crate) slack_unit: i64,
     pub(crate) logspan_enabled: bool,
+    pub(crate) bumps_activated: bool,
 }
 
 /// Hints guide the execution of individual instructions in the machine.
@@ -139,7 +140,7 @@ impl<D: Discretization> MachineBuilder<D> {
     /// - `max_precision`: 10,000 bits
     /// - `slack_unit`: 512
     /// - `profiling`: enabled, buffer capacity 1000
-    /// - `logspan`: disabled unless explicitly enabled
+    /// - `logspan`: disabled initially, enabled automatically if tuning stalls
     pub fn new(disc: D) -> Self {
         Self {
             disc,
@@ -191,7 +192,8 @@ impl<D: Discretization> MachineBuilder<D> {
     }
 
     /// Enable logspan calculation from the first precision tuning pass.
-    /// By default, logspan is zero. This setting persists across evaluations.
+    /// By default, logspan is zero until tuning stalls and activates bumps mode.
+    /// This setting persists across evaluations and does not disable that fallback.
     pub fn enable_logspan(mut self, enabled: bool) -> Self {
         self.logspan_enabled = enabled;
         self
@@ -275,6 +277,7 @@ impl<D: Discretization> MachineBuilder<D> {
             lower_bound_early_stopping: false,
             slack_unit: self.slack_unit,
             logspan_enabled: self.logspan_enabled,
+            bumps_activated: false,
             profiler: Profiler::with_capacity(self.profile_capacity),
             profiling_enabled: self.profiling_enabled,
         }
@@ -348,7 +351,6 @@ impl<D: Discretization> Machine<D> {
     }
 
     /// Return the number of bumps detected during the most recent call to [`Machine::apply`].
-    /// Always zero now that the automatic logspan fallback has been removed.
     #[inline]
     pub fn bumps(&self) -> usize {
         self.bumps
