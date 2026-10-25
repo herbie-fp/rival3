@@ -35,6 +35,7 @@ pub(super) fn precision_tuning<D: Discretization>(
 
         vprecs_max[idx] = base_precision
             .saturating_add(parent_upper)
+            .saturating_add(clamp_to_bits(ctx.logspan(output)))
             .clamp(machine.min_precision, machine.max_precision);
 
         // if machine.lower_bound_early_stopping {
