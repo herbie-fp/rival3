@@ -250,6 +250,17 @@ impl Ival {
         };
 
         match (class_x, class_y) {
+            // A singleton signed zero selects one side of the negative-axis
+            // branch cut. Keep mixed-sign zeros and intervals spanning zero
+            // on the conservative [-pi, pi] path below.
+            (IvalClass::Neg, IvalClass::Mix)
+                if y.lo.as_float().is_zero()
+                    && y.hi.as_float().is_zero()
+                    && y.lo.as_float().is_sign_negative()
+                        == y.hi.as_float().is_sign_negative() =>
+            {
+                mkatan(&y.lo, &x.lo, &y.hi, &x.hi)
+            }
             (IvalClass::Neg, IvalClass::Neg) => mkatan(&y.hi, &x.lo, &y.lo, &x.hi),
             (IvalClass::Mix, IvalClass::Neg) => mkatan(&y.hi, &x.lo, &y.hi, &x.hi),
             (IvalClass::Pos, IvalClass::Neg) => mkatan(&y.lo, &x.lo, &y.hi, &x.hi),
