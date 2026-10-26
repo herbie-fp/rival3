@@ -121,6 +121,11 @@ impl TrickContext {
         }
         let lo = value.lo.as_float();
         let hi = value.hi.as_float();
+        if lo.is_infinite() || hi.is_infinite() {
+            // Request the configured maximum after precision clamping, while
+            // leaving room for amplification arithmetic in i64.
+            return i64::from(u32::MAX);
+        }
         let lo_exp = exponent(lo);
         let hi_exp = exponent(hi);
         (lo_exp - hi_exp).abs() + 1
