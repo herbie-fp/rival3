@@ -121,9 +121,6 @@ impl TrickContext {
         }
         let lo = value.lo.as_float();
         let hi = value.hi.as_float();
-        if lo.is_zero() || hi.is_zero() || lo.is_infinite() || hi.is_infinite() {
-            return get_slack(self.iteration, self.slack_unit);
-        }
         let lo_exp = exponent(lo);
         let hi_exp = exponent(hi);
         (lo_exp - hi_exp).abs() + 1
