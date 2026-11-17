@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 
 use indexmap::IndexMap;
-use rug::{Float, Rational};
+use rug::{Float, Integer, Rational};
 
 use super::{Expression, ExpressionBuilder};
 use crate::eval::instructions::{
@@ -45,6 +45,13 @@ struct Optimizer<'a> {
     optimized: HashMap<usize, usize>,
     promoted: HashMap<usize, usize>,
     instructions: IndexMap<InstructionData, usize>,
+}
+
+struct TrigAccumulator {
+    coefficient: Rational,
+    pi_power: i32,
+    numerator: Vec<usize>,
+    denominator: Vec<usize>,
 }
 
 impl<'a> Optimizer<'a> {
@@ -229,10 +236,10 @@ impl<'a> Optimizer<'a> {
         self.emit_unary(UnaryOp::Log, arg)
     }
 
-    // sin(PI * x) => sinu(2, x), and likewise for cos and tan
+    // sin(PI * coefficient * x) => sinu(unit, multiplier * x), and likewise
+    // for cos and tan.
     fn optimize_trig(&mut self, op: UnaryOp, unit_op: UnaryParamOp, arg: usize) -> usize {
         if let Some((unit, value)) = self.trig_unit(arg) {
-            let value = self.optimize(value);
             self.insert(InstructionData::unary_param(unit_op, unit, value))
         } else {
             self.emit_unary(op, arg)
@@ -390,54 +397,159 @@ impl<'a> Optimizer<'a> {
         }
     }
 
-    /// Match an angle in units of a full turn divided by the returned `unit`.
-    fn trig_unit(&self, register: usize) -> Option<(u64, usize)> {
-        let (lhs, rhs) = self.binary_args(register, BinaryOp::Mul)?;
-
-        // PI * (x / n) and PI * x
-        if self.is_constant(lhs, ConstantOp::Pi) {
-            if let Some((value, divisor)) = self.binary_args(rhs, BinaryOp::Div) {
-                return self
-                    .positive_integer(divisor)
-                    .map(|divisor| (2 * divisor, value));
-            }
-            return Some((2, rhs));
-        }
-
-        // (x / n) * PI and x * PI
-        if self.is_constant(rhs, ConstantOp::Pi) {
-            if let Some((value, divisor)) = self.binary_args(lhs, BinaryOp::Div) {
-                return self
-                    .positive_integer(divisor)
-                    .map(|divisor| (2 * divisor, value));
-            }
-            return Some((2, lhs));
-        }
-
-        // (2 * PI) * x and x * (2 * PI)
-        if self.is_two_pi(lhs) {
-            return Some((1, rhs));
-        }
-        if self.is_two_pi(rhs) {
-            return Some((1, lhs));
-        }
-
-        None
-    }
-
-    fn positive_integer(&self, register: usize) -> Option<u64> {
-        let InstructionData::Literal { value } = self.instruction(register)? else {
-            return None;
+    /// Match an angle of `PI * coefficient * value`, then normalize it to
+    /// `2 * PI * (multiplier * value) / unit`.
+    /// Where `value` is symbolic expression, `multiplier/unit` is a rational coefficient
+    fn trig_unit(&mut self, register: usize) -> Option<(u64, usize)> {
+        let mut accumulator = TrigAccumulator {
+            coefficient: Rational::from(1),
+            pi_power: 0,
+            numerator: Vec::new(),
+            denominator: Vec::new(),
         };
-        let float = value.0.to_f64();
-        let integer = float as u64;
-        (integer > 0 && integer as f64 == float).then_some(integer)
+        self.collect_trig_angle(register, true, &mut accumulator)?;
+        if accumulator.coefficient == 0 {
+            if accumulator.numerator.is_empty() && accumulator.denominator.is_empty() {
+                let zero = self.insert_integer(&Integer::from(0));
+                return Some((1, zero));
+            }
+            return None;
+        }
+        if accumulator.pi_power != 1 {
+            return None;
+        }
+
+        let mut multiplier = accumulator.coefficient.numer().clone();
+        // Amplification-bounds analysis converts `unit` to i64.
+        let mut unit = accumulator.coefficient.denom().clone();
+        if multiplier.is_even() {
+            multiplier /= 2;
+        } else {
+            unit *= 2;
+        }
+        let unit = unit.to_i64().filter(|unit| *unit > 0)? as u64;
+        let value =
+            self.emit_trig_argument(multiplier, accumulator.numerator, accumulator.denominator);
+
+        Some((unit, value))
     }
 
-    fn is_two_pi(&self, register: usize) -> bool {
-        self.binary_args(register, BinaryOp::Mul)
-            .is_some_and(|(lhs, rhs)| {
-                self.literal_rounds_to(lhs, 2.0) && self.is_constant(rhs, ConstantOp::Pi)
-            })
+    /// Collect PI and exact rational factors from an angle. `numerator` tracks
+    /// whether the current subtree contributes directly or reciprocally;
+    /// division flips it for the denominator. Other operations remain opaque.
+    fn collect_trig_angle(
+        &self,
+        register: usize,
+        numerator: bool,
+        accumulator: &mut TrigAccumulator,
+    ) -> Option<()> {
+        if self.is_constant(register, ConstantOp::Pi) {
+            let power = if numerator { 1 } else { -1 };
+            accumulator.pi_power = accumulator.pi_power.checked_add(power)?;
+            return Some(());
+        }
+        if let Some(value) = self.exact_rational(register) {
+            if numerator {
+                accumulator.coefficient *= value;
+            } else {
+                if value == 0 {
+                    return None;
+                }
+                accumulator.coefficient /= value;
+            }
+            return Some(());
+        }
+
+        match self.instruction(register) {
+            Some(InstructionData::Unary {
+                op: UnaryOp::Neg,
+                arg,
+            }) => {
+                accumulator.coefficient = -accumulator.coefficient.clone();
+                self.collect_trig_angle(*arg, numerator, accumulator)
+            }
+            Some(InstructionData::Binary {
+                op: BinaryOp::Mul,
+                lhs,
+                rhs,
+            }) => {
+                self.collect_trig_angle(*lhs, numerator, accumulator)?;
+                self.collect_trig_angle(*rhs, numerator, accumulator)
+            }
+            Some(InstructionData::Binary {
+                op: BinaryOp::Div,
+                lhs,
+                rhs,
+            }) => {
+                self.collect_trig_angle(*lhs, numerator, accumulator)?;
+                self.collect_trig_angle(*rhs, !numerator, accumulator)
+            }
+            _ => {
+                if numerator {
+                    accumulator.numerator.push(register);
+                } else {
+                    accumulator.denominator.push(register);
+                }
+                Some(())
+            }
+        }
+    }
+
+    fn exact_rational(&self, register: usize) -> Option<Rational> {
+        match self.instruction(register)? {
+            InstructionData::Rational { val } => Some(val.0.clone()),
+            InstructionData::Literal { value } if value.0.is_integer() => {
+                value.0.to_integer().map(Rational::from)
+            }
+            _ => None,
+        }
+    }
+
+    fn emit_trig_argument(
+        &mut self,
+        multiplier: Integer,
+        numerator: Vec<usize>,
+        denominator: Vec<usize>,
+    ) -> usize {
+        // [x, z] -> (* x z)
+        let numerator = self.emit_product(numerator);
+        // 5, (* x z) -> (* 5 (* x z))
+        let numerator = match (multiplier, numerator) {
+            (multiplier, None) => self.insert_integer(&multiplier),
+            (multiplier, Some(value)) if multiplier == 1 => value,
+            (multiplier, Some(value)) if multiplier == -1 => {
+                self.insert(InstructionData::unary(UnaryOp::Neg, value))
+            }
+            (multiplier, Some(value)) => {
+                let multiplier = self.insert_integer(&multiplier);
+                self.insert(InstructionData::binary(BinaryOp::Mul, multiplier, value))
+            }
+        };
+
+        // [c, y] -> (* c y)
+        if let Some(denominator) = self.emit_product(denominator) {
+            // (/ (* 5 (* x z)) (* c y))
+            self.insert(InstructionData::binary(
+                BinaryOp::Div,
+                numerator,
+                denominator,
+            ))
+        } else {
+            numerator
+        }
+    }
+
+    fn emit_product(&mut self, factors: Vec<usize>) -> Option<usize> {
+        let mut factors = factors.into_iter();
+        let mut product = self.optimize(factors.next()?);
+        for factor in factors {
+            let factor = self.optimize(factor);
+            product = self.insert(InstructionData::binary(BinaryOp::Mul, product, factor));
+        }
+        Some(product)
+    }
+
+    fn insert_integer(&mut self, value: &Integer) -> usize {
+        self.insert(InstructionData::rational(Rational::from(value.clone())))
     }
 }
