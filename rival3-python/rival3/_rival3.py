@@ -9,6 +9,7 @@ import math
 import os
 import platform
 import re
+from decimal import Decimal, InvalidOperation
 from fractions import Fraction
 from pathlib import Path
 from typing import Mapping, Optional, Sequence, Union
@@ -53,7 +54,6 @@ class UnaryOp(IntEnum):
     FLOOR = 32
     TRUNC = 33
     NOT = 34
-    ASSERT = 35
     ERROR = 36
 
 
@@ -90,6 +90,7 @@ class DiscType(IntEnum):
     BOOL = 0
     F32 = 1
     F64 = 2
+    INT = 3
 
 
 class OutputPolicy(IntEnum):
@@ -146,7 +147,10 @@ except OSError as exc:
 
 
 def _fn(name: str, restype, argtypes):
-    fn = getattr(_lib, name)
+    try:
+        fn = getattr(_lib, name)
+    except AttributeError as exc:
+        raise ABIError(f"Native Rival library is missing required symbol {name}; rebuild rival3-ffi") from exc
     fn.restype = restype
     fn.argtypes = argtypes
     return fn
@@ -157,6 +161,15 @@ _size = C.c_size_t
 _u32 = C.c_uint32
 _i32 = C.c_int32
 _charp = C.c_char_p
+
+
+class _TextInput(C.Structure):
+    _fields_ = [("kind", _u32), ("value", _charp)]
+
+
+class _Execution(C.Structure):
+    _fields_ = [("instruction_idx", _i32), ("precision", _u32),
+                ("time_ms", C.c_double), ("iteration", _u32)]
 _version = _fn("rival_version", _u32, [])
 if _version() != ABI_VERSION:
     raise ABIError(f"Rival ABI mismatch: expected {ABI_VERSION}, got {_version()}")
@@ -179,9 +192,16 @@ _options_max_precision = _fn("rival_machine_options_set_max_precision", _i32, [_
 _options_profile_capacity = _fn("rival_machine_options_set_profile_capacity", _i32, [_voidp, _size])
 _machine_new = _fn("rival_machine_new", _i32, [_voidp, C.POINTER(_u32), C.POINTER(_u32), _size, _voidp, C.POINTER(_voidp)])
 _machine_free = _fn("rival_machine_free", None, [_voidp])
-_apply = _fn("rival_machine_apply_f64", _i32, [_voidp, C.POINTER(C.c_double), _size, _voidp, _u32, _u32, C.POINTER(C.c_double), _size])
+# This is faster version of apply when working strictly with floats
+_apply_f64 = _fn("rival_machine_apply_f64", _i32, [_voidp, C.POINTER(C.c_double), _size, _voidp, _u32, _u32, C.POINTER(C.c_double), _size])
+# This is a slower version of apply when passing inputs as strings
+_apply_text = _fn("rival_machine_apply_text", _i32, [_voidp, C.POINTER(_TextInput), _size, _voidp, _u32, _u32, C.POINTER(_voidp), _size])
+_string_free = _fn("rival_string_free", None, [_voidp])
 _set_profiling = _fn("rival_machine_set_profiling", _i32, [_voidp, C.c_bool])
 _get_profiling = _fn("rival_machine_get_profiling", C.c_bool, [_voidp])
+_profiler_reset = _fn("rival_machine_profiler_reset", _i32, [_voidp])
+_profiler_executions = _fn("rival_machine_profiler_executions", _i32, [_voidp, C.POINTER(_Execution), _size, C.POINTER(_size)])
+_instruction_names = _fn("rival_machine_instruction_names", _i32, [_voidp, C.POINTER(C.POINTER(_charp)), C.POINTER(_size)])
 _iterations = _fn("rival_machine_iterations", _u32, [_voidp])
 _bumps = _fn("rival_machine_bumps", _u32, [_voidp])
 
@@ -205,7 +225,7 @@ _UNARY = {
     "erfc": UnaryOp.ERFC, "lgamma": UnaryOp.LGAMMA, "tgamma": UnaryOp.TGAMMA,
     "rint": UnaryOp.RINT, "round": UnaryOp.ROUND, "ceil": UnaryOp.CEIL,
     "floor": UnaryOp.FLOOR, "trunc": UnaryOp.TRUNC, "not": UnaryOp.NOT,
-    "assert": UnaryOp.ASSERT, "error": UnaryOp.ERROR,
+    "error": UnaryOp.ERROR,
 }
 _BINARY = {ast.Add: BinaryOp.ADD, ast.Sub: BinaryOp.SUB, ast.Mult: BinaryOp.MUL,
            ast.Div: BinaryOp.DIV, ast.Pow: BinaryOp.POW}
@@ -218,14 +238,15 @@ _CALLS.update({"pow": (BinaryOp.POW, 2), "hypot": (BinaryOp.HYPOT, 2),
                "or": (BinaryOp.OR, 2), "fma": (TernaryOp.FMA, 3)})
 _COMPARE = {ast.Eq: BinaryOp.EQ, ast.NotEq: BinaryOp.NE, ast.Lt: BinaryOp.LT,
             ast.LtE: BinaryOp.LE, ast.Gt: BinaryOp.GT, ast.GtE: BinaryOp.GE}
-_REAL_UNARY = {name for name, code in _UNARY.items() if code not in (UnaryOp.NOT, UnaryOp.ASSERT, UnaryOp.ERROR)}
+_REAL_UNARY = {name for name, code in _UNARY.items() if code not in (UnaryOp.NOT, UnaryOp.ERROR)}
 _REAL_BINARY = {"pow", "hypot", "fmin", "fmax", "fdim", "copysign", "fmod", "remainder", "atan2"}
 
 
-def _infer_type(node: ast.AST, variables: dict[str, Optional[str]], expected: Optional[str] = None) -> Optional[str]:
-    """Infer types from operators and an optional declared output type."""
+# This function tries infer type of a variable given expected output type of an expression
+def _infer_type(node: ast.AST, variables: dict[str, Optional[str]], expected: str) -> str:
+    
     def require(actual: Optional[str], wanted: str, what: str) -> str:
-        if actual is not None and actual != wanted:
+        if actual != wanted:
             raise TypeError(f"{what} must be {wanted}, got {actual}")
         return wanted
 
@@ -233,21 +254,22 @@ def _infer_type(node: ast.AST, variables: dict[str, Optional[str]], expected: Op
         actual = "bool" if isinstance(node.value, bool) else "real" if isinstance(node.value, (int, float)) else None
         if actual is None:
             raise ValueError("Only numeric and boolean literals are supported")
-        return require(actual, expected, "literal") if expected else actual
+        return require(actual, expected, f"literal {node.value}")
     if isinstance(node, ast.Name):
-        if node.id in {"PI", "E", "INFINITY", "INF", "NAN"}:
-            return require("real", expected, node.id) if expected else "real"
+        if node.id in {"PI", "E", "INF", "NAN"}:
+            return require("real", expected, node.id)
         if node.id not in variables:
             raise ValueError(f"Variable {node.id!r} was not declared")
-        current = variables[node.id]
-        if expected:
-            variables[node.id] = require(current, expected, f"input {node.id!r}")
+        if variables[node.id] is None:
+            variables[node.id] = variables[node.id]
+        else:
+            require(variables[node.id], expected, f"input {node.id!r}")
         return variables[node.id]
     if isinstance(node, ast.UnaryOp):
         wanted = "bool" if isinstance(node.op, ast.Not) else "real"
         if not isinstance(node.op, (ast.Not, ast.USub, ast.UAdd)):
             raise ValueError("Unsupported unary operator")
-        require(expected, wanted, "unary expression") if expected else None
+        require(expected, wanted, "unary expression")
         _infer_type(node.operand, variables, wanted)
         return wanted
     if isinstance(node, ast.BinOp):
@@ -257,14 +279,14 @@ def _infer_type(node: ast.AST, variables: dict[str, Optional[str]], expected: Op
             wanted, operand_type = "real", "real"
         else:
             raise ValueError("Unsupported binary operator")
-        require(expected, wanted, "binary expression") if expected else None
+        require(expected, wanted, "binary expression")
         _infer_type(node.left, variables, operand_type)
         _infer_type(node.right, variables, operand_type)
         return wanted
     if isinstance(node, ast.Compare):
         if not all(type(op) in _COMPARE for op in node.ops):
             raise ValueError("Unsupported comparison operator")
-        require(expected, "bool", "comparison") if expected else None
+        require(expected, "bool", "comparison")
         _infer_type(node.left, variables, "real")
         for operand in node.comparators:
             _infer_type(operand, variables, "real")
@@ -272,26 +294,20 @@ def _infer_type(node: ast.AST, variables: dict[str, Optional[str]], expected: Op
     if isinstance(node, ast.BoolOp):
         if not isinstance(node.op, (ast.And, ast.Or)):
             raise ValueError("Unsupported boolean operator")
-        require(expected, "bool", "boolean expression") if expected else None
-        for value in node.values:
-            _infer_type(value, variables, "bool")
+        require(expected, "bool", "boolean expression")
+        _infer_type(node.left, variables, "bool")
+        _infer_type(node.right, variables, "bool")
         return "bool"
     if isinstance(node, ast.IfExp):
         _infer_type(node.test, variables, "bool")
-        body_type = _infer_type(node.body, variables, expected)
-        other_type = _infer_type(node.orelse, variables, expected or body_type)
-        if body_type is None and other_type is not None:
-            body_type = _infer_type(node.body, variables, other_type)
-        if other_type is None and body_type is not None:
-            other_type = _infer_type(node.orelse, variables, body_type)
-        if body_type and other_type and body_type != other_type:
-            raise TypeError("conditional branches must have the same type")
-        return expected or body_type or other_type
+        _infer_type(node.body, variables, expected)
+        _infer_type(node.orelse, variables, expected)
+        return expected
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and not node.keywords:
         name, args = node.func.id, node.args
         if name in _REAL_UNARY and len(args) == 1:
             wanted, arg_types = "real", ("real",)
-        elif name in {"assert", "not"} and len(args) == 1:
+        elif name == "not" and len(args) == 1:
             wanted, arg_types = "bool", ("bool",)
         elif name == "error" and len(args) == 1:
             wanted, arg_types = "bool", ("real",)
@@ -303,7 +319,7 @@ def _infer_type(node: ast.AST, variables: dict[str, Optional[str]], expected: Op
             wanted, arg_types = "real", ("real", "real", "real")
         else:
             raise ValueError(f"Unsupported function or arity: {name}/{len(args)}")
-        require(expected, wanted, name) if expected else None
+        require(expected, wanted, name)
         for arg, arg_type in zip(args, arg_types):
             _infer_type(arg, variables, arg_type)
         return wanted
@@ -314,16 +330,13 @@ def _lower(node: ast.AST, builder: int, source: str) -> int:
     # boolean literal
     if isinstance(node, ast.Constant) and isinstance(node.value, bool):
         return _expr_f64(builder, 1.0 if node.value else 0.0)
-    # int/float literal
+    # This avoids Python roundings!
     if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
         literal = ast.get_source_segment(source, node)
         if literal is None:
             raise ValueError("Could not recover numeric literal from expression")
         literal = literal.replace("_", "")
-        if isinstance(node.value, int):
-            exact = Fraction(node.value, 1)
-        else:
-            exact = Fraction(literal)
+        exact = Fraction(Decimal(literal))
         return _expr_bigrational(builder, str(exact.numerator).encode(), str(exact.denominator).encode())
     if isinstance(node, ast.Name):
         constants = {"PI": _expr_pi, "E": _expr_e, "INF": _expr_inf}
@@ -374,15 +387,60 @@ def _lower(node: ast.AST, builder: int, source: str) -> int:
     raise ValueError(f"Unsupported expression syntax: {ast.dump(node, include_attributes=False)}")
 
 
+def _rational(text: str) -> Fraction:
+    """Parse finite decimal/scientific notation or an integer fraction exactly."""
+    try:
+        if "/" in text:
+            parts = text.split("/")
+            if len(parts) != 2 or any(re.fullmatch(r"[+-]?[0-9]+", part.strip()) is None for part in parts):
+                raise ValueError("Expected an integer numerator and denominator")
+            # Decimal construction avoids Python's decimal-string digit limit.
+            return Fraction(*(int(Decimal(part.strip())) for part in parts))
+        value = Decimal(text)
+        if not value.is_finite():
+            raise ValueError("Rational inputs must be finite")
+        return Fraction(value)
+    except (InvalidOperation, ValueError, ZeroDivisionError) as exc:
+        raise ValueError(f"Invalid exact rational input: {text!r}") from exc
+
+
+def _encode_input(value: object, expected: Optional[str], name: str) -> tuple[int, bytes]:
+    if expected == "bool" and not isinstance(value, bool):
+        raise TypeError(f"Input {name!r} must be bool")
+    if isinstance(value, bool):
+        if expected == "real":
+            raise TypeError(f"Input {name!r} must be int, float, or an exact rational string")
+        return 3, b"1" if value else b"0"
+    if isinstance(value, int):
+        return 0, str(Decimal(value)).encode("ascii")
+    if isinstance(value, float):
+        return 1, repr(value).encode("ascii")
+    if isinstance(value, str):
+        rational = _rational(value)
+        return 2, f"{Decimal(rational.numerator)}/{Decimal(rational.denominator)}".encode("ascii")
+    raise TypeError(f"Input {name!r} must be int, float, bool, or an exact rational string")
+
+
+def _decode_output(text: str, kind: str):
+    if kind == "int":
+        return int(Decimal(text))
+    if kind == "bool":
+        return text == "1"
+    if kind == "float":
+        return float(text)
+    else:
+        raise NotImplementedError()
+
+
 class Machine:
     """A compiled Rival expression set. Close it when finished."""
 
-    def __init__(self, handle: int, variables: Sequence[str], input_types: Mapping[str, str], output_types: Sequence[str]):
+    def __init__(self, handle: int, variables: Sequence[str], input_types: Mapping[str, Optional[str]], discs: Sequence[str]):
         self._handle = handle
         self.variables = tuple(variables)
         self.input_types = dict(input_types)
-        self.output_types = tuple(output_types)
-        self.output_count = len(self.output_types)
+        self.discs = tuple(discs)
+        self.output_count = len(discs)
 
     def close(self) -> None:
         if self._handle:
@@ -397,27 +455,41 @@ class Machine:
     def __exit__(self, *_exc):
         self.close()
 
-    def apply(self, point: Mapping[str, object], *, max_iterations: int = 5, allow_partial: bool = False):
+    def apply(self, *point: object):
+        max_iterations = 5
+        # Require all outputs to be evaluated no matter errors we get
+        policy = OutputPolicy.REQUIRE_ALL
+
         if not self._handle:
             raise RuntimeError("Machine is closed")
-        if set(point) != set(self.variables):
-            raise ValueError(f"Expected values for exactly these variables: {self.variables}")
-        converted = []
-        for name in self.variables:
-            value = point[name]
-            if self.input_types[name] == "bool":
-                if not isinstance(value, bool):
-                    raise TypeError(f"Input {name!r} must be bool")
-                converted.append(1.0 if value else 0.0)
-            else:
-                if isinstance(value, bool) or not isinstance(value, (int, float)):
-                    raise TypeError(f"Input {name!r} must be int or float")
-                converted.append(float(value))
-        args = (C.c_double * len(self.variables))(*converted)
-        out = (C.c_double * self.output_count)()
-        policy = OutputPolicy.ALLOW_PARTIAL if allow_partial else OutputPolicy.REQUIRE_ALL
-        _check(_apply(self._handle, args, len(args), None, max_iterations, int(policy), out, len(out)))
-        values = tuple(bool(value) if typ == "bool" else value for value, typ in zip(out, self.output_types))
+        if len(point) != len(self.variables):
+            raise ValueError(f"Expected {len(self.variables)} input value(s) in variable order {self.variables}")
+
+        # Fast float-pass
+        if all(type(value) is float for value in point) and all(disc != "int" for disc in self.discs):
+            args = (C.c_double * len(point))(*point)
+            out = (C.c_double * self.output_count)()
+            _check(_apply_f64(self._handle, args, len(args), None, max_iterations, int(policy), out, len(out)))
+            values = tuple(bool(value) if disc == "bool" else value for value, disc in zip(out, self.discs))
+        
+        # Slower pass for exactly representing rationals/integers in Rust
+        else:
+            encoded = [
+                _encode_input(value, self.input_types[name], name)
+                for name, value in zip(self.variables, point)
+            ]
+            args = (_TextInput * len(encoded))(*(_TextInput(kind, value) for kind, value in encoded))
+            out = (_voidp * self.output_count)()
+            try:
+                _check(_apply_text(self._handle, args, len(args), None, max_iterations, int(policy), out, len(out)))
+                values = tuple(
+                    _decode_output(C.string_at(ptr).decode("ascii"), typ) if ptr else None
+                    for ptr, typ in zip(out, self.discs)
+                )
+            finally:
+                for ptr in out:
+                    if ptr:
+                        _string_free(ptr)
         return values[0] if self.output_count == 1 else values
 
     @property
@@ -429,51 +501,59 @@ class Machine:
         _check(_set_profiling(self._handle, bool(enabled)))
 
     @property
-    def iterations(self) -> int:
-        return int(_iterations(self._handle))
+    def profiling_info(self) -> list[dict[str, object]]:
+        """Return a snapshot of recorded instruction executions."""
+        names_ptr = C.POINTER(_charp)()
+        name_count = _size()
+        _check(_instruction_names(self._handle, C.byref(names_ptr), C.byref(name_count)))
+        names = [names_ptr[i].decode("utf-8") for i in range(name_count.value)]
 
-    @property
-    def bumps(self) -> int:
-        return int(_bumps(self._handle))
+        count = _size()
+        _check(_profiler_executions(self._handle, None, 0, C.byref(count)))
+        records = (_Execution * count.value)()
+        _check(_profiler_executions(self._handle, records, len(records), C.byref(count)))
+        return [
+            {"instruction": names[record.instruction_idx],
+             "precision": record.precision,
+             "time_ms": record.time_ms,
+             "iteration": record.iteration}
+            for record in records[:count.value]
+        ]
+
+    def reset_profiling(self) -> None:
+        """Clear recorded instruction executions."""
+        _check(_profiler_reset(self._handle))
+
+    
 
 
-def compile(expression: Union[str, Sequence[str]], variables: Sequence[str], *, discretizations: Union[str, Sequence[str]], max_precision: int = 10000, profile_capacity: int = 10000) -> Machine:
-    """Compile expressions with required f64/bool output discretizations."""
-    expressions = [expression] if isinstance(expression, str) else list(expression)
+def compile(expressions: list[str], variables: list[str], *, discs: list[str], max_precision: int = 10000, profile_capacity: int = 10000) -> Machine:
+    """Compile expression and variable lists with required output discretizations."""
+    if not isinstance(expressions, list) or not isinstance(variables, list) or not isinstance(discs, list):
+        raise TypeError("expressions, variables, and discs must be lists")
+    if any(not isinstance(expr, str) for expr in expressions):
+        raise TypeError("every expression must be a string")
     variables = tuple(variables)
     if not expressions or len(set(variables)) != len(variables):
         raise ValueError("Provide at least one expression and unique variable names")
     if any(not isinstance(v, str) or not v.isidentifier() for v in variables):
         raise ValueError("Variable names must be Python identifiers")
-    parsed = [ast.parse(re.sub(r"\bassert(?=\s*\()", "asrt__", expr), mode="eval").body for expr in expressions]
-        
-    # Python reserves `assert` as a statement, so string expressions use an
-    # internal spelling that maps back to Rival's assert operator.
-    for tree in parsed:
-        for node in ast.walk(tree):
-            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-                    and node.func.id == "asrt__"):
-                node.func.id = "assert"
-    
-    declared_outputs = [discretizations] if isinstance(discretizations, str) else list(discretizations)
-    if len(declared_outputs) != len(parsed):
+    parsed = [ast.parse(expr, mode="eval").body for expr in expressions]
+
+    if len(discs) != len(parsed):
         raise ValueError("Provide one output type per expression")
-    output_types = []
-    for typ in declared_outputs:
-        if typ == "f64":
-            output_types.append("real")
-        elif typ == "bool":
-            output_types.append("bool")
-        else:
-            raise ValueError(f"Output type must be f64 or bool, got {typ!r}")
-    inferred_inputs = {name: None for name in variables}
-    for tree, declared in zip(parsed, output_types):
-        inferred = _infer_type(tree, inferred_inputs, declared)
-        if inferred != declared:
-            raise TypeError(f"Expression output type is {inferred}, expected {declared}")
-    unknown_inputs = [name for name, typ in inferred_inputs.items() if typ is None]
-    if unknown_inputs:
-        raise ValueError(f"Could not infer input type(s) for {unknown_inputs}; use them in a typed expression")
+
+    disc_types = {"bool": DiscType.BOOL, "float": DiscType.F64, "int": DiscType.INT}
+    for disc in discs:
+        if disc not in disc_types:
+            raise ValueError(f"Discs must be float, bool or int, got {disc!r}")
+
+    # Little typecheck and inferring input types
+    otypes = ["bool" if disc == "bool" else "real" for disc in discs]
+    itypes = {name: None for name in variables}
+    for tree, otype in zip(parsed, otypes):
+        _infer_type(tree, itypes, otype)
+        
     names = (_charp * len(variables))(*(v.encode() for v in variables))
     builder = _voidp()
     _check(_builder_new(names, len(names), C.byref(builder)))
@@ -487,9 +567,11 @@ def compile(expression: Union[str, Sequence[str]], variables: Sequence[str], *, 
         _check(_options_max_precision(options, max_precision))
         _check(_options_profile_capacity(options, profile_capacity))
         handle_array = (_u32 * len(handles))(*handles)
-        types = (_u32 * len(handles))(*(int(DiscType.BOOL if typ == "bool" else DiscType.F64) for typ in output_types))
+        
+        types = (_u32 * len(handles))(*(int(disc_types[disc]) for disc in discs))
+        
         _check(_machine_new(builder, handle_array, types, len(handles), options, C.byref(machine)))
-        return Machine(machine.value, variables, inferred_inputs, output_types)
+        return Machine(machine.value, variables, itypes, discs)
     finally:
         if options:
             _options_free(options)

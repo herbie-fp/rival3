@@ -37,14 +37,14 @@ pub enum RivalAnalysis {
     Invalid = 2,
 }
 
-fn output_policy(code: OutputPolicyCode) -> Result<OutputPolicy, RivalError> {
+pub(crate) fn output_policy(code: OutputPolicyCode) -> Result<OutputPolicy, RivalError> {
     Ok(match RivalOutputPolicy::try_from(code)? {
         RivalOutputPolicy::RequireAll => OutputPolicy::RequireAll,
         RivalOutputPolicy::AllowPartial => OutputPolicy::AllowPartial,
     })
 }
 
-unsafe fn machine_hints<'a>(
+pub(crate) unsafe fn machine_hints<'a>(
     machine: &RivalMachine,
     hints: *const RivalHints,
 ) -> Result<Option<&'a [Hint]>, RivalError> {

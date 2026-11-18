@@ -45,6 +45,7 @@ enum RivalDiscType
     RIVAL_DISC_TYPE_BOOL = 0,
     RIVAL_DISC_TYPE_F32 = 1,
     RIVAL_DISC_TYPE_F64 = 2,
+    RIVAL_DISC_TYPE_INT = 3,
 };
 #ifndef __cplusplus
 typedef uint32_t RivalDiscType;
@@ -194,6 +195,11 @@ typedef struct {
     uint32_t iteration;
 } RivalExecution;
 
+typedef struct {
+    uint32_t kind;
+    const char *value;
+} RivalTextInput;
+
 #define RIVAL_EXPR_INVALID UINT32_MAX
 
 #ifdef __cplusplus
@@ -317,6 +323,32 @@ RivalError rival_machine_instruction_names(const RivalMachine *machine,
 uint32_t rival_machine_iterations(const RivalMachine *machine);
 
 uint32_t rival_machine_bumps(const RivalMachine *machine);
+
+/**
+ * Evaluate text inputs with separate kind tags. Values are decimal integers,
+ * f64 representations, `0`/`1` booleans, or rational numerator/denominator.
+ * Rational bounds are refined at increasing precision when necessary.
+ * Every declared argument must have a non-null, NUL-terminated input string.
+ *
+ * On success, each output is newly allocated decimal text, or NULL for an
+ * invalid output under AllowPartial. Bool outputs are "0" or "1". Integer
+ * outputs truncate toward zero. Free each non-null output with
+ * `rival_string_free`. Output slots are untouched on error. Do not pass slots
+ * that still own strings from a previous call.
+ */
+RivalError rival_machine_apply_text(RivalMachine *machine,
+                                    const RivalTextInput *args,
+                                    size_t n_args,
+                                    const RivalHints *hints,
+                                    uint32_t max_iterations,
+                                    RivalOutputPolicy policy,
+                                    char **out,
+                                    size_t n_out);
+
+/**
+ * Free one string returned by `rival_machine_apply_text`. NULL is allowed.
+ */
+void rival_string_free(char *value);
 
 #ifdef __cplusplus
 }  // extern "C"

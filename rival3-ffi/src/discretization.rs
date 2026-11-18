@@ -1,6 +1,6 @@
 use num_enum::TryFromPrimitive;
 use rival::Discretization;
-use rug::Float;
+use rug::{Float, Integer, float::Round};
 
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromPrimitive)]
@@ -8,6 +8,7 @@ pub enum RivalDiscType {
     Bool = 0,
     F32 = 1,
     F64 = 2,
+    Int = 3,
 }
 
 #[derive(Clone)]
@@ -19,6 +20,10 @@ pub struct RivalDiscretization {
 impl RivalDiscretization {
     pub(crate) fn new(types: Vec<RivalDiscType>, precision: u32) -> Self {
         Self { precision, types }
+    }
+
+    pub(crate) fn type_at(&self, idx: usize) -> RivalDiscType {
+        self.types[idx]
     }
 }
 
@@ -32,6 +37,7 @@ impl Discretization for RivalDiscretization {
             RivalDiscType::F64 => Float::with_val(f64::MANTISSA_DIGITS, v.to_f64()),
             RivalDiscType::F32 => Float::with_val(f32::MANTISSA_DIGITS, v.to_f32()),
             RivalDiscType::Bool => v.clone(),
+            RivalDiscType::Int => v.clone().trunc(),
         }
     }
 
@@ -46,8 +52,23 @@ impl Discretization for RivalDiscretization {
             }
             RivalDiscType::F32 => ordinal_distance_f32(lo.to_f32(), hi.to_f32()),
             RivalDiscType::F64 => ordinal_distance_f64(lo.to_f64(), hi.to_f64()),
+            // Endpoints have already been truncated by convert. Never use the
+            // floating-point midpoint rule for integer rounding boundaries.
+            RivalDiscType::Int => {
+                if lo.is_finite() && hi.is_finite() && lo == hi {
+                    0
+                } else {
+                    2
+                }
+            }
         }
     }
+}
+
+pub(crate) fn truncated_integer(value: &Float) -> Option<Integer> {
+    value
+        .to_integer_round(Round::Zero)
+        .map(|(integer, _)| integer)
 }
 
 fn ordinal_distance_f32(x: f32, y: f32) -> usize {

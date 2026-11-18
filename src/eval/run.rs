@@ -87,6 +87,54 @@ impl<D: Discretization> Machine<D> {
         Err(RivalError::Unsamplable)
     }
 
+    /// Evaluate point inputs whose enclosing intervals can be refined.
+    ///
+    /// `refine` must replace each argument with a sound enclosure of the same
+    /// point at the requested precision. Only exact endpoints may be marked
+    /// immovable. Working precision doubles uniformly, up to `max_precision`,
+    /// for at most `max_iterations` evaluations. This schedule is independent
+    /// of the machine's adaptive/baseline strategy.
+    pub fn apply_refining(
+        &mut self,
+        args: &[Ival],
+        hint: Option<&[Hint]>,
+        max_iterations: usize,
+        policy: OutputPolicy,
+        mut refine: impl FnMut(u32, &mut [Ival]),
+    ) -> Result<Vec<Ival>, RivalError> {
+        self.load_arguments(args);
+        let defaults = self.default_hint.clone();
+        let hints = hint.unwrap_or(&defaults);
+        assert_eq!(hints.len(), self.instructions.len(), "hint length mismatch");
+        let mut precision = self
+            .argument_precision()
+            .saturating_add(10)
+            .min(self.max_precision);
+        for iteration in 0..max_iterations {
+            refine(precision, &mut self.registers[..self.arguments.len()]);
+            self.iteration = iteration;
+            self.precisions.fill(precision);
+            // Refined inputs invalidate dependent instructions. Constants can
+            // retain cached values only if their precision is sufficient.
+            for idx in 0..self.instructions.len() {
+                let constant = self.initial_repeats[idx];
+                self.repeats[idx] = constant && precision <= self.best_known_precisions[idx];
+                if constant && !self.repeats[idx] {
+                    self.best_known_precisions[idx] = precision;
+                }
+            }
+            self.run_with_plan(hints, false);
+            if let Some(outputs) = self.collect_outputs(policy)? {
+                return Ok(outputs);
+            }
+            if precision == self.max_precision {
+                break;
+            }
+            precision = precision.saturating_mul(2).min(self.max_precision);
+        }
+        Err(RivalError::Unsamplable)
+    }
+
     fn apply_baseline(
         &mut self,
         hints: &[Hint],
@@ -205,8 +253,12 @@ impl<D: Discretization> Machine<D> {
 
     /// Execute instructions once using the supplied precision and hint plan.
     fn run_with_hint(&mut self, hints: &[Hint]) {
+        self.run_with_plan(hints, self.iteration == 0);
+    }
+
+    fn run_with_plan(&mut self, hints: &[Hint], initial: bool) {
         // On the first iteration use the initial plan; subsequent iterations use tuned state.
-        let (precisions, repeats) = if self.iteration == 0 {
+        let (precisions, repeats) = if initial {
             (&self.initial_precisions[..], &self.initial_repeats[..])
         } else {
             (&self.precisions[..], &self.repeats[..])

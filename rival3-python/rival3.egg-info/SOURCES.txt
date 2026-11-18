@@ -7,3 +7,4 @@ rival3.egg-info/PKG-INFO
 rival3.egg-info/SOURCES.txt
 rival3.egg-info/dependency_links.txt
 rival3.egg-info/top_level.txt
+tests/test_values.py

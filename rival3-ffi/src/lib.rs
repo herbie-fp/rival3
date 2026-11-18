@@ -3,6 +3,7 @@ mod expr;
 mod machine;
 mod options;
 mod profile;
+mod text;
 
 use gmp_mpfr_sys::mpfr::mpfr_t;
 use num_enum::{TryFromPrimitive, TryFromPrimitiveError};

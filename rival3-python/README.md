@@ -6,9 +6,9 @@ compiled to a reusable machine:
 ```python
 from rival3 import compile
 
-machine = compile("x * y + sin(z)", ["x", "y", "z"], discretizations="f64")
+machine = compile(["x * y + sin(z)"], ["x", "y", "z"], discs=["float"])
 try:
-    result = machine.apply({"x": 2.0, "y": 3.0, "z": 0.5})
+    result = machine.apply(2.0, 3.0, 0.5)
 finally:
     machine.close()
 ```
@@ -20,8 +20,8 @@ Input types are inferred from the expression. For a bare variable, declare its
 output type so the compiler can infer the corresponding input type:
 
 ```python
-with compile("enabled", ["enabled"], discretizations="bool") as machine:
-    result = machine.apply({"enabled": True})
+with compile(["enabled"], ["enabled"], discs=["bool"]) as machine:
+    result = machine.apply(True)
 ```
 
 Real inputs accept Python integers or floats; boolean inputs require `bool`.
