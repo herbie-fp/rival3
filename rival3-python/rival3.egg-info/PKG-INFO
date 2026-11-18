@@ -1,0 +1,28 @@
+Metadata-Version: 2.4
+Name: rival3
+Version: 0.1.0
+Summary: Python bindings to the Rival 3 numerical evaluator
+License: MIT
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3 :: Only
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+
+# Rival 3 for Python
+
+Python bindings to Rival 3. Expressions are written as Python-like strings and
+compiled to a reusable machine:
+
+```python
+from rival3 import compile
+
+machine = compile("x * y + sin(z)", ["x", "y", "z"])
+try:
+    result = machine.apply({"x": 2.0, "y": 3.0, "z": 0.5})
+finally:
+    machine.close()
+```
+
+V1 evaluates f64 inputs. Analysis, hints, and arbitrary-precision inputs are
+not yet exposed.

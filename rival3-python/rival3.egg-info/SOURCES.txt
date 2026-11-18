@@ -1,0 +1,9 @@
+README.md
+pyproject.toml
+setup.py
+rival3/__init__.py
+rival3/_rival3.py
+rival3.egg-info/PKG-INFO
+rival3.egg-info/SOURCES.txt
+rival3.egg-info/dependency_links.txt
+rival3.egg-info/top_level.txt
