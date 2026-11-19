@@ -7,8 +7,12 @@ use crate::{
 };
 use gmp_mpfr_sys::mpfr::{self, mpfr_t};
 use num_enum::TryFromPrimitive;
-use rival::{Discretization, ErrorFlags, Hint, Ival, Machine, MachineBuilder, OutputPolicy};
-use rug::Assign;
+use rival::{
+    Discretization, ErrorFlags, Hint, Input, InputRange, Ival, Machine, MachineBuilder,
+    OutputPolicy,
+};
+use rug::Float;
+use std::ffi::{CStr, c_char};
 
 pub struct RivalMachine {
     pub(crate) machine: Machine<RivalDiscretization>,
@@ -20,6 +24,61 @@ pub struct RivalMachine {
 
 pub struct RivalHints {
     hints: Vec<Hint>,
+}
+
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, TryFromPrimitive)]
+pub enum RivalInputKind {
+    Rational = 0,
+    F64 = 1,
+    Bool = 2,
+}
+
+#[repr(C)]
+pub struct RivalInput {
+    pub kind: RivalInputKind,
+    pub value: *const c_char,
+}
+
+unsafe fn parse_input(input: &RivalInput) -> Result<Input, RivalError> {
+    if input.value.is_null() {
+        return Err(RivalError::Misuse);
+    }
+    let text = unsafe { CStr::from_ptr(input.value) }
+        .to_str()
+        .map_err(|_| RivalError::Misuse)?;
+    Ok(match input.kind {
+        RivalInputKind::Rational => Input::Text(text.to_owned()),
+        RivalInputKind::F64 => Input::F64(text.parse().map_err(|_| RivalError::Misuse)?),
+        RivalInputKind::Bool => match text {
+            "0" => Input::Bool(false),
+            "1" => Input::Bool(true),
+            _ => return Err(RivalError::Misuse),
+        },
+    })
+}
+
+fn write_analysis(
+    failure: &Ival,
+    converged: bool,
+    hints: Vec<Hint>,
+    out_analysis: &mut RivalAnalysis,
+    out_converged: Option<&mut bool>,
+    out_hints: Option<&mut *mut RivalHints>,
+) {
+    *out_analysis = if !failure.lo().is_zero() {
+        RivalAnalysis::Invalid
+    } else if !failure.hi().is_zero() {
+        RivalAnalysis::MaybeInvalid
+    } else {
+        RivalAnalysis::Valid
+    };
+    if let Some(out_converged) = out_converged {
+        *out_converged = converged;
+    }
+    if let Some(out_hints) = out_hints {
+        *out_hints = Box::into_raw(Box::new(RivalHints { hints }));
+    }
 }
 
 #[repr(u32)]
@@ -53,43 +112,6 @@ unsafe fn machine_hints<'a>(
             Err(RivalError::Misuse)
         }
         hints => Ok(hints.map(|hints| hints.hints.as_slice())),
-    }
-}
-
-unsafe fn marshal_point_args(args: &[*const mpfr_t], buf: &mut [Ival]) -> Result<(), RivalError> {
-    for (ival, &ptr) in buf.iter_mut().zip(args) {
-        if ptr.is_null() {
-            return Err(RivalError::Misuse);
-        }
-        let src_prec = unsafe { mpfr::get_prec(ptr) } as u32;
-        ival.set_prec(src_prec);
-        unsafe {
-            mpfr::set(ival.lo_mut().as_raw_mut(), ptr, mpfr::rnd_t::RNDN);
-            mpfr::set(ival.hi_mut().as_raw_mut(), ptr, mpfr::rnd_t::RNDN);
-        }
-        ival.set_immovable(true, true);
-        let err = if ival.lo().is_finite() {
-            ErrorFlags::none()
-        } else {
-            ErrorFlags::error()
-        };
-        ival.set_error_flags(err);
-    }
-    Ok(())
-}
-
-fn marshal_f64_args(args: &[f64], buf: &mut [Ival]) {
-    for (ival, &x) in buf.iter_mut().zip(args) {
-        ival.set_prec(f64::MANTISSA_DIGITS);
-        ival.lo_mut().assign(x);
-        ival.hi_mut().assign(x);
-        ival.set_immovable(true, true);
-        let err = if x.is_finite() {
-            ErrorFlags::none()
-        } else {
-            ErrorFlags::error()
-        };
-        ival.set_error_flags(err);
     }
 }
 
@@ -240,11 +262,21 @@ pub unsafe extern "C" fn rival_machine_apply(
             return Err(RivalError::Misuse);
         }
 
-        unsafe { marshal_point_args(args, &mut machine.arg_buf)? };
-        let outputs =
-            machine
-                .machine
-                .apply(&machine.arg_buf, hints, max_iterations as usize, policy)?;
+        let inputs: Vec<Input> = args
+            .iter()
+            .map(|&ptr| {
+                if ptr.is_null() {
+                    return Err(RivalError::Misuse);
+                }
+                let precision = unsafe { mpfr::get_prec(ptr) } as u32;
+                let mut value = Float::new(precision);
+                unsafe { mpfr::set(value.as_raw_mut(), ptr, mpfr::rnd_t::RNDN) };
+                Ok(Input::from(value))
+            })
+            .collect::<Result<_, _>>()?;
+        let outputs = machine
+            .machine
+            .apply(&inputs, hints, max_iterations as usize, policy)?;
         unsafe { write_outputs(&outputs, machine.machine.discretization(), out) };
         Ok(())
     })
@@ -271,11 +303,10 @@ pub unsafe extern "C" fn rival_machine_apply_f64(
         let args = unsafe { c_slice(args, n_args)? };
         let out = unsafe { c_slice_mut(out, n_out)? };
 
-        marshal_f64_args(args, &mut machine.arg_buf);
-        let outputs =
-            machine
-                .machine
-                .apply(&machine.arg_buf, hints, max_iterations as usize, policy)?;
+        let inputs: Vec<Input> = args.iter().copied().map(Input::from).collect();
+        let outputs = machine
+            .machine
+            .apply(&inputs, hints, max_iterations as usize, policy)?;
         write_f64_outputs(&outputs, machine.machine.discretization(), out);
         Ok(())
     })
@@ -310,19 +341,64 @@ pub unsafe extern "C" fn rival_machine_analyze(
                 .machine
                 .analyze_with_hints(&machine.arg_buf, hints, policy);
 
-        *out_analysis = if !failure.lo().is_zero() {
-            RivalAnalysis::Invalid
-        } else if !failure.hi().is_zero() {
-            RivalAnalysis::MaybeInvalid
-        } else {
-            RivalAnalysis::Valid
-        };
-        if let Some(out_converged) = out_converged {
-            *out_converged = converged;
+        write_analysis(
+            &failure,
+            converged,
+            hints,
+            out_analysis,
+            out_converged,
+            out_hints,
+        );
+        Ok(())
+    })
+}
+
+/// Analyze typed bounds supplied as `[lo0, hi0, lo1, hi1, ...]`.
+/// Rational kind values accept exact decimal or integer-fraction text; f64
+/// values parse as Python/C-style f64 values; booleans accept `0` and `1`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rival_machine_analyze_inputs(
+    machine: *mut RivalMachine,
+    bounds: *const RivalInput,
+    n_args: usize,
+    hints: *const RivalHints,
+    policy: OutputPolicyCode,
+    out_analysis: *mut RivalAnalysis,
+    out_converged: *mut bool,
+    out_hints: *mut *mut RivalHints,
+) -> RivalError {
+    status(|| {
+        let machine = unsafe { machine.as_mut() }.ok_or(RivalError::Misuse)?;
+        let out_analysis = unsafe { out_analysis.as_mut() }.ok_or(RivalError::Misuse)?;
+        let out_converged = unsafe { out_converged.as_mut() };
+        let out_hints = unsafe { out_hints.as_mut() };
+        if n_args != machine.n_vars {
+            return Err(RivalError::Misuse);
         }
-        if let Some(out_hints) = out_hints {
-            *out_hints = Box::into_raw(Box::new(RivalHints { hints }));
-        }
+        let policy = output_policy(policy)?;
+        let hints = unsafe { machine_hints(machine, hints)? };
+        let n_bounds = n_args.checked_mul(2).ok_or(RivalError::Misuse)?;
+        let bounds = unsafe { c_slice(bounds, n_bounds)? };
+        let bounds = bounds
+            .chunks_exact(2)
+            .map(|pair| unsafe {
+                Ok(InputRange::new(
+                    parse_input(&pair[0])?,
+                    parse_input(&pair[1])?,
+                ))
+            })
+            .collect::<Result<Vec<_>, RivalError>>()?;
+        let (failure, hints, converged) = machine
+            .machine
+            .analyze_inputs_with_hints(&bounds, hints, policy)?;
+        write_analysis(
+            &failure,
+            converged,
+            hints,
+            out_analysis,
+            out_converged,
+            out_hints,
+        );
         Ok(())
     })
 }

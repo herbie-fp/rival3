@@ -53,6 +53,10 @@ pub struct Instruction {
 /// Payload for an instruction covering literal, constant, and operator variants
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum InstructionData {
+    /// Convert the argument at `index` to an interval at this instruction's precision.
+    Input {
+        index: usize,
+    },
     Literal {
         value: HashFloat,
     },
@@ -139,6 +143,7 @@ impl InstructionData {
     /// Visit each input register index for this payload variant
     pub fn for_each_input(&self, mut f: impl FnMut(usize)) {
         match self {
+            InstructionData::Input { index } => f(*index),
             InstructionData::Literal { .. }
             | InstructionData::Rational { .. }
             | InstructionData::Constant { .. } => {}
@@ -175,6 +180,7 @@ impl InstructionData {
     /// Return an operation name for profiling/debugging
     pub fn name_static(&self) -> &'static str {
         match self {
+            InstructionData::Input { .. } => "input",
             InstructionData::Literal { .. } => "literal",
             InstructionData::Rational { .. } => "rational",
             InstructionData::Constant { op } => name_of_constant(*op),

@@ -68,6 +68,7 @@ mod interval;
 mod mpfr;
 
 pub use eval::builder::{Expression, ExpressionBuilder};
+pub use eval::input::{Input, InputRange};
 pub use eval::machine::{Discretization, Hint, Machine, MachineBuilder, Strategy};
 pub use eval::profile::Execution;
 pub use eval::run::{OutputPolicy, RivalError};

@@ -1,13 +1,20 @@
 //! Evaluator for individual instructions
 
-use crate::eval::instructions::{Instruction, InstructionData::*};
+use crate::eval::input::Input;
+use crate::eval::instructions::{Instruction, InstructionData, InstructionData::*};
 use crate::eval::ops;
+use crate::eval::run::RivalError;
 use crate::interval::{ErrorFlags, Ival};
 use rug::float::Round;
 use rug::ops::AssignRound;
 
 /// Evaluate an instruction into its output register using the provided precision
-pub fn evaluate_instruction(instruction: &Instruction, registers: &mut [Ival], precision: u32) {
+pub fn evaluate_instruction(
+    instruction: &Instruction,
+    registers: &mut [Ival],
+    precision: u32,
+    inputs: &[Input],
+) -> Result<(), RivalError> {
     let out = instruction.out;
 
     // Split registers so we can mutate out_reg while reading inputs.
@@ -27,6 +34,14 @@ pub fn evaluate_instruction(instruction: &Instruction, registers: &mut [Ival], p
     };
 
     match &instruction.data {
+        InstructionData::Input { index } => {
+            *out_reg = Ival::with_val(precision, &inputs[*index]).map_err(|source| {
+                RivalError::InputParse {
+                    index: *index,
+                    source,
+                }
+            })?;
+        }
         Literal { value } => {
             let val = &value.0;
             out_reg.set_prec(precision.max(val.prec()));
@@ -63,4 +78,5 @@ pub fn evaluate_instruction(instruction: &Instruction, registers: &mut [Ival], p
             arg3,
         } => ops::execute_ternary(*op, out_reg, get_reg(*arg1), get_reg(*arg2), get_reg(*arg3)),
     }
+    Ok(())
 }

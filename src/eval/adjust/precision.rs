@@ -47,7 +47,8 @@ pub(super) fn precision_tuning<D: Discretization>(
 
         // Propagate precision requirements to children based on error amplification.
         match &instruction.data {
-            InstructionData::Literal { .. }
+            InstructionData::Input { .. }
+            | InstructionData::Literal { .. }
             | InstructionData::Rational { .. }
             | InstructionData::Constant { .. } => {}
             InstructionData::Unary { op, arg } => {

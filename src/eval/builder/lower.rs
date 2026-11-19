@@ -60,7 +60,7 @@ impl<'a> Optimizer<'a> {
     /// Lower a source register, rewriting the operation at its root.
     fn optimize(&mut self, register: usize) -> usize {
         if register < self.source.arguments.len() {
-            return register;
+            return self.insert(InstructionData::Input { index: register });
         }
         if let Some(&optimized) = self.optimized.get(&register) {
             return optimized;
@@ -87,7 +87,7 @@ impl<'a> Optimizer<'a> {
     /// `log(exp(x)) => x`, leaves that argument at the root of the result.
     fn promote(&mut self, register: usize) -> usize {
         if register < self.source.arguments.len() {
-            return register;
+            return self.insert(InstructionData::Input { index: register });
         }
         if let Some(&promoted) = self.promoted.get(&register) {
             return promoted;

@@ -468,7 +468,8 @@ fn make_initial_repeats(
         if depends {
             initial_repeats[idx] = false;
         } else {
-            execute::evaluate_instruction(instr, registers, prec);
+            execute::evaluate_instruction(instr, registers, prec, &[])
+                .expect("constant instructions do not parse runtime inputs");
             best_known_precisions[idx] = prec;
         }
     }
