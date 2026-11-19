@@ -71,4 +71,4 @@ pub use eval::builder::{Expression, ExpressionBuilder};
 pub use eval::machine::{Discretization, Hint, Machine, MachineBuilder, Strategy};
 pub use eval::profile::Execution;
 pub use eval::run::{OutputPolicy, RivalError};
-pub use interval::{ErrorFlags, Ival};
+pub use interval::{ErrorFlags, IntoIval, Ival, ParseIvalError};
