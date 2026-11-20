@@ -47,7 +47,7 @@ impl Hash for HashRational {
 ///
 /// Input slots are external sources, not machine registers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct InputSlot(pub usize);
+pub struct InputIndex(pub usize);
 
 /// Register machine instruction with output register index and payload data
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -61,7 +61,7 @@ pub struct Instruction {
 pub enum InstructionData {
     /// Convert a runtime input slot to an interval at this instruction's precision.
     WithVal {
-        input: InputSlot,
+        input: InputIndex,
     },
     Literal {
         value: HashFloat,

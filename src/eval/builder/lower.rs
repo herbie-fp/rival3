@@ -11,7 +11,7 @@ use rug::{Float, Rational};
 
 use super::{Expression, ExpressionBuilder};
 use crate::eval::instructions::{
-    BinaryOp, ConstantOp, InputSlot, Instruction, InstructionData, TernaryOp, UnaryOp, UnaryParamOp,
+    BinaryOp, ConstantOp, InputIndex, Instruction, InstructionData, TernaryOp, UnaryOp, UnaryParamOp,
 };
 
 /// A register program ready for evaluation.
@@ -61,7 +61,7 @@ impl<'a> Optimizer<'a> {
     fn optimize(&mut self, register: usize) -> usize {
         if register < self.source.arguments.len() {
             return self.insert(InstructionData::WithVal {
-                input: InputSlot(register),
+                input: InputIndex(register),
             });
         }
         if let Some(&optimized) = self.optimized.get(&register) {
@@ -90,7 +90,7 @@ impl<'a> Optimizer<'a> {
     fn promote(&mut self, register: usize) -> usize {
         if register < self.source.arguments.len() {
             return self.insert(InstructionData::WithVal {
-                input: InputSlot(register),
+                input: InputIndex(register),
             });
         }
         if let Some(&promoted) = self.promoted.get(&register) {
