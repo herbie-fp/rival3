@@ -3,7 +3,7 @@
 use super::{
     builder::{Expression, ExpressionBuilder},
     execute,
-    instructions::Instruction,
+    instructions::{Instruction, InstructionData},
     profile::{Execution, Profiler},
 };
 use crate::interval::Ival;
@@ -206,9 +206,8 @@ impl<D: Discretization> MachineBuilder<D> {
     /// on a specific point.
     pub fn build(self, expressions: &ExpressionBuilder, outputs: &[Expression]) -> Machine<D> {
         let program = expressions.finish(outputs);
-        let var_count = program.arguments.len();
         let instruction_count = program.instructions.len();
-        let register_count = var_count + instruction_count;
+        let register_count = instruction_count;
 
         let mut registers = vec![Ival::zero(self.max_precision); register_count];
         let instructions = program.instructions;
@@ -217,7 +216,6 @@ impl<D: Discretization> MachineBuilder<D> {
         let initial_precisions = match self.strategy {
             Strategy::Adaptive => make_initial_precisions(
                 &instructions,
-                var_count,
                 &program.outputs,
                 &self.disc,
                 self.base_tuning_precision,
@@ -228,7 +226,6 @@ impl<D: Discretization> MachineBuilder<D> {
 
         let initial_repeats = make_initial_repeats(
             &instructions,
-            var_count,
             &mut registers,
             &initial_precisions,
             &mut best_known_precisions,
@@ -270,18 +267,13 @@ impl<D: Discretization> Machine<D> {
     /// Return the instruction index that writes to the given register when applicable.
     #[inline]
     pub(crate) fn register_to_instruction(&self, register: usize) -> Option<usize> {
-        let var_count = self.arguments.len();
-        if register >= var_count {
-            Some(register - var_count)
-        } else {
-            None
-        }
+        (register < self.instructions.len()).then_some(register)
     }
 
     /// Return the register index corresponding to an instruction index.
     #[inline]
     pub(crate) fn instruction_register(&self, index: usize) -> usize {
-        self.arguments.len() + index
+        index
     }
 
     /// Return the total number of instructions in the compiled machine.
@@ -417,7 +409,6 @@ impl PathOutcome {
 /// Determine initial precision targets for each instruction.
 fn make_initial_precisions<D: Discretization>(
     instructions: &[Instruction],
-    var_count: usize,
     roots: &[usize],
     disc: &D,
     base_tuning_precision: u32,
@@ -427,8 +418,8 @@ fn make_initial_precisions<D: Discretization>(
 
     // Initialize output nodes to target + base precision.
     for &root in roots.iter() {
-        if root >= var_count {
-            precisions[root - var_count] = disc.target() + base_tuning_precision;
+        if root < instructions.len() {
+            precisions[root] = disc.target() + base_tuning_precision;
         }
     }
 
@@ -436,10 +427,7 @@ fn make_initial_precisions<D: Discretization>(
     for idx in (0..instructions.len()).rev() {
         let current_prec = precisions[idx];
         instructions[idx].for_each_input(|reg| {
-            if reg >= var_count {
-                let input_idx = reg - var_count;
-                precisions[input_idx] = precisions[input_idx].max(current_prec + ampl_tuning_bits);
-            }
+            precisions[reg] = precisions[reg].max(current_prec + ampl_tuning_bits);
         });
     }
 
@@ -449,7 +437,6 @@ fn make_initial_precisions<D: Discretization>(
 /// Evaluate and mark constant-only nodes that can skip future execution.
 fn make_initial_repeats(
     instructions: &[Instruction],
-    var_count: usize,
     registers: &mut [Ival],
     initial_precisions: &[u32],
     best_known_precisions: &mut [u32],
@@ -457,10 +444,9 @@ fn make_initial_repeats(
     let mut initial_repeats = vec![true; instructions.len()];
 
     for (idx, (instr, &prec)) in instructions.iter().zip(initial_precisions).enumerate() {
-        let mut depends = false;
+        let mut depends = matches!(&instr.data, InstructionData::WithVal { .. });
         instr.data.for_each_input(|reg| {
-            let child = reg as isize - var_count as isize;
-            if child < 0 || !initial_repeats[child as usize] {
+            if !initial_repeats[reg] {
                 depends = true;
             }
         });

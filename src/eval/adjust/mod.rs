@@ -114,11 +114,8 @@ fn backward_pass<D: Discretization>(machine: &mut Machine<D>, hints: &[Hint]) ->
             continue;
         }
 
-        let var_count = machine.arguments.len();
         let mut mark = |reg: usize| {
-            if reg >= var_count {
-                work_repeats[reg - var_count] = false;
-            }
+            work_repeats[reg] = false;
         };
         path_reduction(machine, idx, &mut mark);
     }

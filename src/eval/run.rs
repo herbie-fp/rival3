@@ -338,8 +338,6 @@ impl<D: Discretization> Machine<D> {
         self.precisions.fill(new_prec);
 
         if self.iteration != 0 {
-            let var_count = self.arguments.len();
-
             // Determine which instructions can affect outputs (must be executed).
             let mut useful = vec![false; instruction_count];
             for &root in &self.outputs {
@@ -359,9 +357,7 @@ impl<D: Discretization> Machine<D> {
                     continue;
                 }
                 self.instructions[idx].for_each_input(|reg| {
-                    if reg >= var_count {
-                        useful[reg - var_count] = true;
-                    }
+                    useful[reg] = true;
                 });
             }
 
@@ -373,7 +369,7 @@ impl<D: Discretization> Machine<D> {
                 let mut inputs_stable = true;
                 if is_constant {
                     self.instructions[idx].for_each_input(|reg| {
-                        if reg >= var_count && !self.repeats[reg - var_count] {
+                        if !self.repeats[reg] {
                             inputs_stable = false;
                         }
                     });

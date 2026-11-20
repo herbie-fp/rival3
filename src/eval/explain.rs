@@ -254,11 +254,8 @@ fn trace_backward_pass<D: Discretization>(machine: &mut Machine<D>, hints: &[Hin
             continue;
         }
 
-        let var_count = machine.arguments.len();
         let mut mark = |reg: usize| {
-            if reg >= var_count {
-                work_repeats[reg - var_count] = false;
-            }
+            work_repeats[reg] = false;
         };
         path_reduction(machine, idx, &mut mark);
     }
@@ -584,7 +581,6 @@ fn trace_repeat_updates<D: Discretization>(
     } else {
         &machine.precisions
     };
-    let var_count = machine.arguments.len();
     let mut any_reevaluation = false;
 
     for idx in 0..instruction_count {
@@ -626,7 +622,7 @@ fn trace_repeat_updates<D: Discretization>(
         let self_reg = machine.instruction_register(idx);
         let mut children_repeat = true;
         machine.instructions[idx].data.for_each_input(|reg| {
-            if reg != self_reg && reg >= var_count && !repeats[reg - var_count] {
+            if reg != self_reg && !repeats[reg] {
                 children_repeat = false;
             }
         });
@@ -692,7 +688,7 @@ fn format_seed_reason<D: Discretization>(
 
     if cached_constant {
         reason.push_str("; constant node cached after compilation");
-    } else if idx == machine.outputs[0].saturating_sub(machine.arguments.len()) {
+    } else if idx == machine.outputs[0] {
         reason.push_str("; root seed precision");
     }
 

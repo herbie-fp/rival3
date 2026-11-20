@@ -34,10 +34,10 @@ pub fn evaluate_instruction(
     };
 
     match &instruction.data {
-        InstructionData::Input { index } => {
-            *out_reg = Ival::with_val(precision, &inputs[*index]).map_err(|source| {
+        InstructionData::WithVal { input } => {
+            *out_reg = Ival::with_val(precision, &inputs[input.0]).map_err(|source| {
                 RivalError::InputParse {
-                    index: *index,
+                    index: input.0,
                     source,
                 }
             })?;

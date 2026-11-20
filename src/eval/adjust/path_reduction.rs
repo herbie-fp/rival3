@@ -33,7 +33,7 @@ where
         }
         InstructionData::Binary { op, .. } => ops::path_reduce_binary(*op, machine, idx, mark),
         InstructionData::Ternary { op, .. } => ops::path_reduce_ternary(*op, machine, idx, mark),
-        InstructionData::Input { .. }
+        InstructionData::WithVal { .. }
         | InstructionData::Literal { .. }
         | InstructionData::Rational { .. }
         | InstructionData::Constant { .. } => PathOutcome::execute(true),
