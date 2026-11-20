@@ -11,7 +11,7 @@ use rug::{Float, Integer, Rational};
 
 use super::{Expression, ExpressionBuilder};
 use crate::eval::instructions::{
-    BinaryOp, ConstantOp, Instruction, InstructionData, TernaryOp, UnaryOp, UnaryParamOp,
+    BinaryOp, ConstantOp, InputIndex, Instruction, InstructionData, TernaryOp, UnaryOp, UnaryParamOp,
 };
 
 /// A register program ready for evaluation.
@@ -67,7 +67,9 @@ impl<'a> Optimizer<'a> {
     /// Lower a source register, rewriting the operation at its root.
     fn optimize(&mut self, register: usize) -> usize {
         if register < self.source.arguments.len() {
-            return register;
+            return self.insert(InstructionData::WithVal {
+                input: InputIndex(register),
+            });
         }
         if let Some(&optimized) = self.optimized.get(&register) {
             return optimized;
@@ -94,7 +96,9 @@ impl<'a> Optimizer<'a> {
     /// `log(exp(x)) => x`, leaves that argument at the root of the result.
     fn promote(&mut self, register: usize) -> usize {
         if register < self.source.arguments.len() {
-            return register;
+            return self.insert(InstructionData::WithVal {
+                input: InputIndex(register),
+            });
         }
         if let Some(&promoted) = self.promoted.get(&register) {
             return promoted;
@@ -144,7 +148,7 @@ impl<'a> Optimizer<'a> {
 
     /// Add an instruction whose arguments are already lowered.
     fn insert(&mut self, data: InstructionData) -> usize {
-        let next_register = self.source.arguments.len() + self.instructions.len();
+        let next_register = self.instructions.len();
         *self.instructions.entry(data).or_insert(next_register)
     }
 

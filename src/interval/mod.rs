@@ -4,8 +4,10 @@ pub(crate) mod constants;
 pub(crate) mod core;
 pub(crate) mod fmod;
 pub(crate) mod gamma;
+mod input;
 pub(crate) mod pow;
 pub(crate) mod trig;
 pub(crate) mod value;
 
 pub use value::{ErrorFlags, Ival};
+pub use input::{IntoIval, ParseIvalError};

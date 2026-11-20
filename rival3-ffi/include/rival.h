@@ -37,6 +37,19 @@ enum RivalAnalysis
 typedef uint32_t RivalAnalysis;
 #endif // __cplusplus
 
+enum RivalInputKind
+#ifdef __cplusplus
+  : uint32_t
+#endif // __cplusplus
+ {
+    RIVAL_INPUT_KIND_RATIONAL = 0,
+    RIVAL_INPUT_KIND_F64 = 1,
+    RIVAL_INPUT_KIND_BOOL = 2,
+};
+#ifndef __cplusplus
+typedef uint32_t RivalInputKind;
+#endif // __cplusplus
+
 enum RivalDiscType
 #ifdef __cplusplus
   : uint32_t
@@ -188,6 +201,11 @@ typedef struct RivalMachineOptions RivalMachineOptions;
 typedef uint32_t RivalExpr;
 
 typedef struct {
+    RivalInputKind kind;
+    const char *value;
+} RivalInput;
+
+typedef struct {
     int32_t instruction_idx;
     uint32_t precision;
     double time_ms;
@@ -283,6 +301,20 @@ RivalError rival_machine_analyze(RivalMachine *machine,
                                  RivalAnalysis *out_analysis,
                                  bool *out_converged,
                                  RivalHints **out_hints);
+
+/**
+ * Analyze typed bounds supplied as `[lo0, hi0, lo1, hi1, ...]`.
+ * Rational kind values accept exact decimal or integer-fraction text; f64
+ * values parse as Python/C-style f64 values; booleans accept `0` and `1`.
+ */
+RivalError rival_machine_analyze_inputs(RivalMachine *machine,
+                                        const RivalInput *bounds,
+                                        size_t n_args,
+                                        const RivalHints *hints,
+                                        RivalOutputPolicy policy,
+                                        RivalAnalysis *out_analysis,
+                                        bool *out_converged,
+                                        RivalHints **out_hints);
 
 RivalError rival_machine_options_new(RivalMachineOptions **out);
 
