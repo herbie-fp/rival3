@@ -395,6 +395,9 @@ fn main() {
         Err(RivalError::InputParse { index, source }) => {
             println!("\nError: Could not parse input {index}: {source}");
         }
+        Err(RivalError::InputShape { index, expected }) => {
+            println!("\nError: Input {index} must be a {expected}");
+        }
         Err(RivalError::Unsamplable) => {
             println!("\nError: Could not converge");
         }
