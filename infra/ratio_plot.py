@@ -59,7 +59,7 @@ def plot_speed_graph_baseline_precision(outcomes, args):
     x, y = tool_speeds(sollya_cmp, 'ziv_iter')
     ax.plot(x - 1, y, ':', marker='>', linewidth=2.0, color='b', label='sollya')
     x, y = tool_speeds(rival_cmp, 'ziv_iter')
-    ax.plot(x - 1, y, '.-', linewidth=2.0, color='r', label='reval')
+    ax.plot(x - 1, y, '.-', linewidth=2.0, color='r', label='rival')
     
     ax.legend()
     ax.set_xlabel("True uniform precision")
