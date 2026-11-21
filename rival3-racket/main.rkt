@@ -11,6 +11,7 @@
 ;; No contract for functions that tend to be extremely hot.
 (provide rival-apply
          rival-apply/f64
+         rival-apply/mpfr
          rival-analyze-with-hints
          rival-analyze)
 
@@ -53,6 +54,52 @@
   (if (boolean? x)
       (if x 1.0 0.0)
       x))
+
+(define _rival-input-value (_union _pointer _double _stdbool _int64 _uint64 _pointer))
+(define-cstruct _rival-input ([kind _uint32] [value _rival-input-value]))
+
+(define (text->c-string text)
+  (define bytes (string->bytes/utf-8 text))
+  (define ptr (malloc (add1 (bytes-length bytes)) 'raw))
+  (for ([i (in-range (bytes-length bytes))])
+    (ptr-set! ptr _ubyte i (bytes-ref bytes i)))
+  (ptr-set! ptr _ubyte (bytes-length bytes) 0)
+  ptr)
+
+;; TAGS:
+;;    Text = 0,
+;;    F64 = 1,
+;;    Bool = 2,
+;;    I64 = 3,
+;;    U64 = 4,
+;;    Mpfr = 5,
+
+(define (rival-input-for value)
+  (define (tag kind ctype raw owner)
+    (values (make-rival-input kind (cast raw ctype _rival-input-value)) owner))
+  (cond
+    ; Bool
+    [(boolean? value) (tag 2 _stdbool value #f)]
+    ; MPFR
+    [(bigfloat? value) (tag 5 _mpfr-pointer value #f)]
+    ; String input
+    [(string? value)
+     (define ptr (text->c-string value))
+     (tag 0 _pointer ptr ptr)]
+    ; Rational #1 or integers
+    [(and (real? value) (exact? value))
+     (define ptr (text->c-string (number->string value)))
+     (tag 0 _pointer ptr ptr)]
+    ; f64
+    [(flonum? value) (tag 1 _double value #f)]
+    ; Rational #2
+    [(and (real? value) (inexact? value))
+     (define exact-value (inexact->exact value))
+     (define ptr (text->c-string (number->string exact-value)))
+     (tag 0 _pointer ptr ptr)]
+    [else
+     (raise-argument-error
+      'rival-apply "real number, boolean, string, or bigfloat" value)]))
 
 (define boolean-discretization (discretization 'bool 53 bf->bool))
 (define flonum-discretization (discretization 'f64 53 bigfloat->flonum))
@@ -219,6 +266,9 @@
 (define _apply-fun
   (_fun _pointer _pointer _size _pointer _uint32 _rival-output-policy _pointer _size -> _rival-error))
 (define-rival rival_machine_apply _apply-fun)
+(define-rival rival_machine_apply_mpfr _apply-fun)
+(define-rival rival_machine_apply_outputs_f64 _apply-fun)
+(define-rival rival_machine_apply_mpfr_outputs_f64 _apply-fun)
 (define-rival rival_machine_apply_f64 _apply-fun)
 
 (define-rival rival_machine_analyze
@@ -233,7 +283,8 @@
                     ->
                     (status : _rival-error)
                     ->
-                    (values status analysis converged hints)))
+                    (values status analysis converged hints))
+              #:c-id rival_machine_analyze_mpfr)
 (define-rival rival_machine_analyze/no-hints
               (_fun _pointer
                     _pointer
@@ -247,7 +298,7 @@
                     (status : _rival-error)
                     ->
                     (values status analysis))
-              #:c-id rival_machine_analyze)
+              #:c-id rival_machine_analyze_mpfr)
 
 (define-rival rival_hints_free (_fun _pointer -> _void))
 
@@ -496,35 +547,105 @@
 (define (output-policy partial?)
   (if partial? 'allow_partial 'require_all))
 
+(define (rival-machine-f64-outputs? machine)
+  (andmap (lambda (disc)
+            (memq (discretization-type disc) '(f32 f64)))
+          (rival-machine-discs machine)))
+
+(define (read-f64-outputs machine)
+  (define discs (rival-machine-discs machine))
+  (define outs (rival-machine-f64-out-buf machine))
+  (for/vector #:length (length discs)
+              ([i (in-range (length discs))]
+               [disc (in-list discs)])
+    (define x (ptr-ref outs _double i))
+    (cond
+      [(nan? x) 'invalid]
+      ;; Preserve custom converters. The standard f64 converter is exactly
+      ;; represented by the double written by Rust.
+      [(eq? (discretization-convert disc) bigfloat->flonum) x]
+      [else
+       ((discretization-convert disc)
+        (parameterize ([bf-precision 53]) (bf x)))])))
+
 (define (rival-apply machine pt [hints #f] #:partial? [partial? #f])
+  (cond
+    [(for/and ([arg (in-vector pt)]) (flonum? arg))
+     (rival-apply/f64 machine pt hints #:partial? partial?)]
+    [(for/and ([arg (in-vector pt)]) (bigfloat? arg))
+     (rival-apply/mpfr machine pt hints #:partial? partial?)]
+    [else
+        (define n-args (vector-length pt))
+        (check-arity! 'rival-apply "point" machine n-args)
+        (check-hints! 'rival-apply machine hints)
+        (define inputs (malloc _rival-input (max 1 n-args) 'atomic-interior))
+        (define text-owners '())
+        (define out-bfs (rival-machine-out-bfs machine))
+        (define n-outs (vector-length out-bfs))
+        (define f64-outputs? (rival-machine-f64-outputs? machine))
+        (dynamic-wind
+          void
+          (lambda ()
+            (for ([i (in-range n-args)]
+                  [arg (in-vector pt)])
+              (define-values (input owner) (rival-input-for arg))
+              (when owner (set! text-owners (cons owner text-owners)))
+              (ptr-set! inputs _rival-input i input))
+            (if f64-outputs?
+                (check-ok! 'rival-apply
+                           (rival_machine_apply_outputs_f64
+                            machine inputs n-args hints (*rival-max-iterations*)
+                            (output-policy partial?)
+                            (rival-machine-f64-out-buf machine) n-outs)
+                           pt)
+                (check-ok! 'rival-apply
+                           (rival_machine_apply
+                            machine inputs n-args hints (*rival-max-iterations*)
+                            (output-policy partial?)
+                            (rival-machine-out-buf machine) n-outs)
+                           pt))
+            (if f64-outputs?
+                (read-f64-outputs machine)
+                (for/vector #:length n-outs
+                            ([bf (in-vector out-bfs)]
+                             [disc (in-list (rival-machine-discs machine))])
+                  (if (bfnan? bf)
+                      'invalid
+                      ((discretization-convert disc) bf)))))
+          (lambda ()
+            (for ([owner (in-list text-owners)]) (free owner))
+            (free inputs)))]))
+
+(define (rival-apply/mpfr machine pt [hints #f] #:partial? [partial? #f])
   (define n-args (vector-length pt))
-  (check-arity! 'rival-apply "point" machine n-args)
-  (check-hints! 'rival-apply machine hints)
-  (define arg-buf (rival-machine-arg-buf machine))
-  (define arg-bfs (rival-machine-arg-bfs machine))
+  (check-arity! 'rival-apply/mpfr "point" machine n-args)
+  (check-hints! 'rival-apply/mpfr machine hints)
+  (define args (rival-machine-arg-buf machine))
   (for ([i (in-range n-args)]
         [arg (in-vector pt)])
-    (define x (input->bf arg))
-    (vector-set! arg-bfs i x)
-    (ptr-set! arg-buf _mpfr-pointer i x))
+    (ptr-set! args _mpfr-pointer i arg))
+  (define f64-outputs? (rival-machine-f64-outputs? machine))
   (define out-bfs (rival-machine-out-bfs machine))
   (define n-outs (vector-length out-bfs))
-  (check-ok! 'rival-apply
-             (rival_machine_apply machine
-                                  arg-buf
-                                  n-args
-                                  hints
-                                  (*rival-max-iterations*)
-                                  (output-policy partial?)
-                                  (rival-machine-out-buf machine)
-                                  n-outs)
+  (check-ok! 'rival-apply/mpfr
+             (if f64-outputs?
+                 (rival_machine_apply_mpfr_outputs_f64
+                  machine args n-args hints (*rival-max-iterations*)
+                  (output-policy partial?)
+                  (rival-machine-f64-out-buf machine) n-outs)
+                 (rival_machine_apply_mpfr
+                  machine args n-args hints (*rival-max-iterations*)
+                  (output-policy partial?)
+                  (rival-machine-out-buf machine) n-outs))
              pt)
-  (for/vector #:length n-outs
-              ([bf (in-vector out-bfs)]
-               [disc (in-list (rival-machine-discs machine))])
-    (if (bfnan? bf)
-        'invalid
-        ((discretization-convert disc) bf))))
+  (if f64-outputs?
+      (read-f64-outputs machine)
+      (for/vector #:length n-outs
+                  ([bf (in-vector out-bfs)]
+                   [disc (in-list (rival-machine-discs machine))])
+        (if (bfnan? bf)
+            'invalid
+            ((discretization-convert disc) bf)))))
 
 (define (rival-apply/f64 machine pt [hints #f] #:partial? [partial? #f])
   (define n-args (vector-length pt))

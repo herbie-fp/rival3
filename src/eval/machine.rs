@@ -459,6 +459,5 @@ fn make_initial_repeats(
             best_known_precisions[idx] = prec;
         }
     }
-
     initial_repeats
 }

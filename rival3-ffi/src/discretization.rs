@@ -20,6 +20,12 @@ impl RivalDiscretization {
     pub(crate) fn new(types: Vec<RivalDiscType>, precision: u32) -> Self {
         Self { precision, types }
     }
+
+    pub(crate) fn has_only_float_outputs(&self) -> bool {
+        self.types
+            .iter()
+            .all(|kind| matches!(kind, RivalDiscType::F32 | RivalDiscType::F64))
+    }
 }
 
 impl Discretization for RivalDiscretization {

@@ -21,7 +21,7 @@ pub enum RivalError {
 impl From<CoreError> for RivalError {
     fn from(error: CoreError) -> Self {
         match error {
-            CoreError::InputParse { .. } => Self::Misuse,
+            CoreError::InputParse { .. } | CoreError::InputShape { .. } => Self::Misuse,
             CoreError::InvalidInput => Self::InvalidInput,
             CoreError::Unsamplable => Self::Unsamplable,
         }

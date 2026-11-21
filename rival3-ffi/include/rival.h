@@ -37,19 +37,6 @@ enum RivalAnalysis
 typedef uint32_t RivalAnalysis;
 #endif // __cplusplus
 
-enum RivalInputKind
-#ifdef __cplusplus
-  : uint32_t
-#endif // __cplusplus
- {
-    RIVAL_INPUT_KIND_RATIONAL = 0,
-    RIVAL_INPUT_KIND_F64 = 1,
-    RIVAL_INPUT_KIND_BOOL = 2,
-};
-#ifndef __cplusplus
-typedef uint32_t RivalInputKind;
-#endif // __cplusplus
-
 enum RivalDiscType
 #ifdef __cplusplus
   : uint32_t
@@ -200,9 +187,18 @@ typedef struct RivalMachineOptions RivalMachineOptions;
 
 typedef uint32_t RivalExpr;
 
+typedef union {
+    const char *text;
+    double f64_value;
+    bool bool_value;
+    int64_t i64_value;
+    uint64_t u64_value;
+    mpfr_srcptr mpfr_value;
+} RivalInputValue;
+
 typedef struct {
-    RivalInputKind kind;
-    const char *value;
+    uint32_t kind;
+    RivalInputValue value;
 } RivalInput;
 
 typedef struct {
@@ -275,14 +271,51 @@ size_t rival_machine_var_count(const RivalMachine *machine);
 
 size_t rival_machine_expr_count(const RivalMachine *machine);
 
+RivalError rival_machine_apply_mpfr(RivalMachine *machine,
+                                    const mpfr_srcptr *args,
+                                    size_t n_args,
+                                    const RivalHints *hints,
+                                    uint32_t max_iterations,
+                                    RivalOutputPolicy policy,
+                                    const mpfr_ptr *out,
+                                    size_t n_out);
+
+/**
+ * Apply MPFR point values and write F32/F64 discretized outputs as doubles.
+ */
+RivalError rival_machine_apply_mpfr_outputs_f64(RivalMachine *machine,
+                                                const mpfr_srcptr *args,
+                                                size_t n_args,
+                                                const RivalHints *hints,
+                                                uint32_t max_iterations,
+                                                RivalOutputPolicy policy,
+                                                double *out,
+                                                size_t n_out);
+
+/**
+ * Apply typed point values. Text inputs are parsed by Rust at each
+ * instruction's working precision.
+ */
 RivalError rival_machine_apply(RivalMachine *machine,
-                               const mpfr_srcptr *args,
+                               const RivalInput *args,
                                size_t n_args,
                                const RivalHints *hints,
                                uint32_t max_iterations,
                                RivalOutputPolicy policy,
                                const mpfr_ptr *out,
                                size_t n_out);
+
+/**
+ * Apply typed point values and write F32/F64 discretized outputs as doubles.
+ */
+RivalError rival_machine_apply_outputs_f64(RivalMachine *machine,
+                                           const RivalInput *args,
+                                           size_t n_args,
+                                           const RivalHints *hints,
+                                           uint32_t max_iterations,
+                                           RivalOutputPolicy policy,
+                                           double *out,
+                                           size_t n_out);
 
 RivalError rival_machine_apply_f64(RivalMachine *machine,
                                    const double *args,
@@ -293,8 +326,22 @@ RivalError rival_machine_apply_f64(RivalMachine *machine,
                                    double *out,
                                    size_t n_out);
 
+RivalError rival_machine_analyze_mpfr(RivalMachine *machine,
+                                      const mpfr_srcptr *rect,
+                                      size_t n_args,
+                                      const RivalHints *hints,
+                                      RivalOutputPolicy policy,
+                                      RivalAnalysis *out_analysis,
+                                      bool *out_converged,
+                                      RivalHints **out_hints);
+
+/**
+ * Analyze typed bounds supplied as `[lo0, hi0, lo1, hi1, ...]`.
+ * Text values are parsed as exact decimal or integer-fraction numerals. Other
+ * kinds carry native f64, bool, integer, or MPFR values.
+ */
 RivalError rival_machine_analyze(RivalMachine *machine,
-                                 const mpfr_srcptr *rect,
+                                 const RivalInput *bounds,
                                  size_t n_args,
                                  const RivalHints *hints,
                                  RivalOutputPolicy policy,
@@ -302,19 +349,14 @@ RivalError rival_machine_analyze(RivalMachine *machine,
                                  bool *out_converged,
                                  RivalHints **out_hints);
 
-/**
- * Analyze typed bounds supplied as `[lo0, hi0, lo1, hi1, ...]`.
- * Rational kind values accept exact decimal or integer-fraction text; f64
- * values parse as Python/C-style f64 values; booleans accept `0` and `1`.
- */
-RivalError rival_machine_analyze_inputs(RivalMachine *machine,
-                                        const RivalInput *bounds,
-                                        size_t n_args,
-                                        const RivalHints *hints,
-                                        RivalOutputPolicy policy,
-                                        RivalAnalysis *out_analysis,
-                                        bool *out_converged,
-                                        RivalHints **out_hints);
+RivalError rival_machine_analyze_f64(RivalMachine *machine,
+                                     const double *bounds,
+                                     size_t n_args,
+                                     const RivalHints *hints,
+                                     RivalOutputPolicy policy,
+                                     RivalAnalysis *out_analysis,
+                                     bool *out_converged,
+                                     RivalHints **out_hints);
 
 RivalError rival_machine_options_new(RivalMachineOptions **out);
 

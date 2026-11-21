@@ -7,7 +7,7 @@ use thiserror::Error;
 
 use crate::eval::{
     execute,
-    input::{Input, InputRange},
+    input::Input,
     machine::{Discretization, Hint, Machine, Strategy},
     profile::Execution,
 };
@@ -66,6 +66,13 @@ impl<D: Discretization> Machine<D> {
         max_iterations: usize,
         policy: OutputPolicy,
     ) -> Result<Vec<Ival>, RivalError> {
+        assert_eq!(args.len(), self.arguments.len(), "Argument count mismatch");
+        if let Some((index, _)) = args.iter().enumerate().find(|(_, input)| input.is_range()) {
+            return Err(RivalError::InputShape {
+                index,
+                expected: "point",
+            });
+        }
         self.reset_evaluation(args.len());
         let hint_storage;
         let hint_slice: &[Hint] = if let Some(h) = hint {
@@ -157,11 +164,26 @@ impl<D: Discretization> Machine<D> {
     /// - `converged` indicates whether the analysis has converged.
     pub fn analyze_with_hints(
         &mut self,
-        rect: &[Ival],
+        rect: &[Input],
         hint: Option<&[Hint]>,
         policy: OutputPolicy,
-    ) -> (Ival, Vec<Hint>, bool) {
-        let inputs: Vec<Input> = rect.iter().cloned().map(Input::Interval).collect();
+    ) -> Result<(Ival, Vec<Hint>, bool), RivalError> {
+        assert_eq!(rect.len(), self.arguments.len(), "Argument count mismatch");
+        if let Some((index, _)) = rect.iter().enumerate().find(|(_, input)| !input.is_range()) {
+            return Err(RivalError::InputShape {
+                index,
+                expected: "box",
+            });
+        }
+        self.analyze_runtime_inputs_with_hints(rect, hint, policy)
+    }
+
+    fn analyze_runtime_inputs_with_hints(
+        &mut self,
+        inputs: &[Input],
+        hint: Option<&[Hint]>,
+        policy: OutputPolicy,
+    ) -> Result<(Ival, Vec<Hint>, bool), RivalError> {
         self.reset_evaluation(inputs.len());
 
         // Use provided hint or default.
@@ -181,63 +203,22 @@ impl<D: Discretization> Machine<D> {
             }
             Strategy::Baseline => self.baseline_adjust(self.disc.target().saturating_add(10)),
         }
-        self.run_with_hint(&inputs, hint_slice)
-            .expect("interval inputs do not require parsing");
+        self.run_with_hint(inputs, hint_slice)?;
 
         let (good, _done, bad, stuck) = self.return_flags(policy);
         let (next_hint, converged) = self.make_hint(hint_slice);
 
         let status = Ival::bool_interval(bad || stuck, (!good) || stuck);
-        (status, next_hint, converged)
-    }
-
-    /// Analyze an input rectangle whose endpoints may be exact typed values.
-    /// Endpoints are enclosed at the machine's argument precision before the
-    /// existing single-pass analysis. Outward rounding may yield `MaybeInvalid`
-    /// for a rectangle that a tighter enclosure could prove valid.
-    pub fn analyze_inputs_with_hints(
-        &mut self,
-        rect: &[InputRange],
-        hint: Option<&[Hint]>,
-        policy: OutputPolicy,
-    ) -> Result<(Ival, Vec<Hint>, bool), RivalError> {
-        assert_eq!(rect.len(), self.arguments.len(), "Argument count mismatch");
-        let precision = self.argument_precision();
-        let rect = rect
-            .iter()
-            .enumerate()
-            .map(|(index, range)| {
-                range
-                    .to_ival(precision)
-                    .map_err(|source| RivalError::InputParse { index, source })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(self.analyze_with_hints(&rect, hint, policy))
+        Ok((status, next_hint, converged))
     }
 
     /// Analyze an input rectangle with typed lower and upper endpoints.
-    pub fn analyze_inputs(
-        &mut self,
-        rect: &[InputRange],
-        policy: OutputPolicy,
-    ) -> Result<Ival, RivalError> {
-        self.analyze_inputs_with_hints(rect, None, policy)
+    pub fn analyze(&mut self, rect: &[Input], policy: OutputPolicy) -> Result<Ival, RivalError> {
+        self.analyze_with_hints(rect, None, policy)
             .map(|(status, _, _)| status)
     }
 
-    /// Analyze a hyper-rectangle and return only the boolean interval status.
-    ///
-    /// Returns the status described by [`Machine::analyze_with_hints`].
-    ///
-    /// The advantage of `analyze` over `apply` is that it applies to
-    /// whole ranges of input points and is much faster.
-    pub fn analyze(&mut self, rect: &[Ival], policy: OutputPolicy) -> Ival {
-        let (status, _hint, _conv) = self.analyze_with_hints(rect, None, policy);
-        status
-    }
-
-    /// Load interval arguments into their existing registers. Typed values are
-    /// borrowed by the conversion instructions until evaluation finishes.
+    /// Reset per-call evaluation state after checking the argument count.
     fn reset_evaluation(&mut self, argument_count: usize) {
         assert_eq!(
             argument_count,
@@ -478,6 +459,12 @@ pub enum RivalError {
     InputParse {
         index: usize,
         source: crate::ParseIvalError,
+    },
+    /// Argument has the wrong shape for point evaluation or box analysis.
+    #[error("Input {index} must be a {expected}")]
+    InputShape {
+        index: usize,
+        expected: &'static str,
     },
     /// The input point is invalid under the evaluation policy being used.
     ///

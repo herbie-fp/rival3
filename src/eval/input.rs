@@ -4,11 +4,10 @@ use rug::{Float, Integer, Rational};
 
 use crate::{ErrorFlags, IntoIval, Ival, ParseIvalError};
 
-/// A runtime input whose enclosure can be recomputed at a requested precision.
+/// A scalar runtime input whose enclosure can be recomputed at a requested precision.
 ///
 /// Strings retain their exact spelling, rationals retain their exact value,
-/// and floating-point inputs retain their existing binary value. An interval
-/// is already an enclosure and is copied without changing its bounds or flags.
+/// and floating-point inputs retain their existing binary value.
 #[derive(Clone, Debug)]
 pub enum Input {
     Bool(bool),
@@ -17,7 +16,7 @@ pub enum Input {
     Integer(Integer),
     Rational(Rational),
     Text(String),
-    Interval(Ival),
+    Range(Box<InputRange>),
 }
 
 /// A runtime interval specified by its lower and upper values.
@@ -38,13 +37,25 @@ impl InputRange {
     pub(crate) fn to_ival(&self, precision: u32) -> Result<Ival, ParseIvalError> {
         let lower = Ival::with_val(precision, &self.lower)?;
         let upper = Ival::with_val(precision, &self.upper)?;
+        if lower.lo() > upper.hi() {
+            return Err(ParseIvalError);
+        }
         let mut interval = Ival::from_lo_hi(lower.lo().clone(), upper.hi().clone());
-        interval.set_immovable(lower.lo_immovable(), upper.hi_immovable());
+        // A non-singleton input range has intentional width. Its exact bounds
+        // must not make that width look like a precision-stuck result.
+        let singleton = lower.lo() == upper.hi() && lower.lo_immovable() && upper.hi_immovable();
+        interval.set_immovable(singleton, singleton);
         let lower_err = lower.error_flags();
         let upper_err = upper.error_flags();
+        // Infinite endpoints are valid bounds when they face outwards.
+        let lower_is_neg_infinity = lower.lo().is_infinite() && lower.lo().is_sign_negative();
+        let upper_is_pos_infinity = upper.hi().is_infinite() && upper.hi().is_sign_positive();
+        let lower_invalid = lower_err.total() && !lower_is_neg_infinity;
+        let upper_invalid = upper_err.total() && !upper_is_pos_infinity;
         interval.set_error_flags(ErrorFlags::new(
-            lower_err.partial() || upper_err.partial(),
-            lower_err.total() || upper_err.total(),
+            (lower_err.partial() && !lower_is_neg_infinity)
+                || (upper_err.partial() && !upper_is_pos_infinity),
+            lower_invalid || upper_invalid,
         ));
         Ok(interval)
     }
@@ -59,7 +70,7 @@ impl IntoIval for &Input {
             Input::Integer(value) => Ival::with_val(precision, value),
             Input::Rational(value) => Ival::with_val(precision, value),
             Input::Text(value) => Ival::with_val(precision, value),
-            Input::Interval(value) => Ok(value.clone()),
+            Input::Range(value) => value.to_ival(precision),
         }
     }
 }
@@ -78,7 +89,13 @@ macro_rules! from_input {
     )+};
 }
 from_input!(bool => Bool, f64 => F64, Float => Float, Integer => Integer,
-            Rational => Rational, String => Text, Ival => Interval);
+            Rational => Rational, String => Text);
+
+impl From<InputRange> for Input {
+    fn from(value: InputRange) -> Self {
+        Self::Range(Box::new(value))
+    }
+}
 
 impl From<&str> for Input {
     fn from(value: &str) -> Self {
@@ -102,3 +119,9 @@ macro_rules! from_integer {
 from_integer!(
     i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize
 );
+
+impl Input {
+    pub(crate) fn is_range(&self) -> bool {
+        matches!(self, Self::Range(_))
+    }
+}
