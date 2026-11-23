@@ -72,10 +72,13 @@ preconditions, tests, @code{try}/@code{catch} blocks, and others.
 @section{Intervals}
 
 @defstruct*[ival
-  ([lo (or/c bigfloat? boolean?)]
-   [hi (or/c bigfloat? boolean?)])]{
+  ([lo any/c]
+   [hi any/c])]{
 An interval with endpoints @racket[lo] and @racket[hi].
-For real-valued intervals, both endpoints are @racket[bigfloat?] values.
+The general analysis API accepts the same endpoint values as @racket[rival-apply]:
+strings, exact or inexact real numbers, booleans, and @racket[bigfloat?]
+values. The @racket[rival-analyze/mpfr] and @racket[rival-analyze/f64]
+variants require bigfloat and flonum endpoints, respectively.
 For boolean intervals returned by @racket[rival-analyze], a true
 @racket[lo] means definite failure; otherwise, a true @racket[hi]
 means possible failure.
@@ -253,6 +256,26 @@ described above.
 }
 
 @defproc[
+  (rival-analyze/mpfr
+    [machine rival-machine?]
+    [input-ranges (vectorof ival?)]
+    [#:partial? partial? any/c #f])
+  ival?]{
+Like @racket[rival-analyze], but accepts only @racket[bigfloat?]
+endpoints and passes them directly to Rival's MPFR API.
+}
+
+@defproc[
+  (rival-analyze/f64
+    [machine rival-machine?]
+    [input-ranges (vectorof ival?)]
+    [#:partial? partial? any/c #f])
+  ival?]{
+Like @racket[rival-analyze], but accepts only @racket[flonum?]
+endpoints and uses Rival's f64 API.
+}
+
+@defproc[
   (rival-analyze-with-hints
     [machine rival-machine?]
     [input-ranges (vectorof ival?)]
@@ -265,6 +288,26 @@ result (a boolean @racket[ival?]), an opaque @racket[rival-hints?]
 value (or @racket[#f]) that can be passed to subsequent calls to
 @racket[rival-analyze-with-hints] or @racket[rival-apply], and a
 boolean indicating whether the analysis converged.
+}
+
+@defproc[
+  (rival-analyze-with-hints/mpfr
+    [machine rival-machine?]
+    [input-ranges (vectorof ival?)]
+    [hints (or/c rival-hints? #f) #f]
+    [#:partial? partial? any/c #f])
+  (list/c ival? (or/c rival-hints? #f) boolean?)]{
+The MPFR-endpoint counterpart of @racket[rival-analyze-with-hints].
+}
+
+@defproc[
+  (rival-analyze-with-hints/f64
+    [machine rival-machine?]
+    [input-ranges (vectorof ival?)]
+    [hints (or/c rival-hints? #f) #f]
+    [#:partial? partial? any/c #f])
+  (list/c ival? (or/c rival-hints? #f) boolean?)]{
+The f64-endpoint counterpart of @racket[rival-analyze-with-hints].
 }
 
 @defproc[(rival-hints? [v any/c]) boolean?]{
