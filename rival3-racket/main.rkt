@@ -551,7 +551,7 @@
   (define n-args (vector-length pt))
   (check-arity! 'rival-apply "point" machine n-args)
   (check-hints! 'rival-apply machine hints)
-  (define inputs (malloc _rival-input (max 1 n-args) 'atomic-interior))
+  (define inputs (malloc _rival-input (max 1 n-args) 'raw))
   (define text-owners '())
   (define out-bfs (rival-machine-out-bfs machine))
   (define n-outs (vector-length out-bfs))
