@@ -69,9 +69,11 @@ def plot_speed_graph_baseline_precision(outcomes, args):
     ax.set_xticks(np.arange(len(xticks)), xticks)
     ax.set_xticklabels(["$2^{" + str(i + 7) + "}$" for i, _ in enumerate(xticks)])
     
-    ax.set_title("Speed plot per precision")
+    title = ax.set_title("Speed plot per precision")
     plt.tight_layout()
     plt.savefig(args.path + "/ratio_plot_precision.png", format="png")
+    title.set_visible(False)
+    plt.tight_layout()
     plt.savefig(args.path + "/ratio_plot_precision.pdf", format="pdf")
     
     # Latex stuff  

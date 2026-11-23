@@ -81,9 +81,11 @@ def plot_histogram_valid(args):
     ax.set_xlabel("Precision (number of bits)")
     
     plt.legend()
-    ax.set_title("Histogram for valid points")
+    title = ax.set_title("Histogram for valid points")
     plt.tight_layout()
     plt.savefig(args.path + "/histogram_valid.png", format="png")
+    title.set_visible(False)
+    plt.tight_layout()
     plt.savefig(args.path + "/histogram_valid.pdf", format="pdf")
     
 def bucket_precisions_by_bins(data, bins):

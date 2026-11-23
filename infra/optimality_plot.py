@@ -82,9 +82,11 @@ def plot_optimality(outcomes, args):
         for pos in range(len(iterations))
     ])
 
-    ax.set_title("Precision compared to optimal")
+    title = ax.set_title("Precision compared to optimal")
     plt.tight_layout()
     plt.savefig(args.path + "/optimality_plot.png", format="png")
+    title.set_visible(False)
+    plt.tight_layout()
     plt.savefig(args.path + "/optimality_plot.pdf", format="pdf")
 
 

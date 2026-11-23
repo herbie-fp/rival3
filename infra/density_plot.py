@@ -58,9 +58,11 @@ def plot_density_cdf(outcomes, args):
     ax.xaxis.grid(True, linestyle='-', which='major', color='grey', alpha=0.3)
 
     plt.legend(loc="best")
-    ax.set_title("Density CDF")
+    title = ax.set_title("Density CDF")
     plt.tight_layout()
     plt.savefig(args.path + "/density_cdf_plot.png", format="png")
+    title.set_visible(False)
+    plt.tight_layout()
     plt.savefig(args.path + "/density_cdf_plot.pdf", format="pdf")
     plt.close(fig)
 

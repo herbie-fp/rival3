@@ -47,9 +47,11 @@ def plot_cnt_per_iters(outcomes, args):
     ax.set_xticklabels([str(iteration) if iteration % 2 == 0 else " " for iteration in iterations])
     plt.ticklabel_format(axis='y', style='sci', scilimits=(4,4))
     
-    ax.set_title("Convergence distribution")
+    title = ax.set_title("Convergence distribution")
     plt.tight_layout()
     plt.savefig(args.path + "/cnt_per_iters_plot.png", format="png")
+    title.set_visible(False)
+    plt.tight_layout()
     plt.savefig(args.path + "/cnt_per_iters_plot.pdf", format="pdf")
    
 
