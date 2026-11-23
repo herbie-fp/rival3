@@ -54,6 +54,19 @@ pub struct RivalInput {
     pub value: RivalInputValue,
 }
 
+// Exact copy of MPFR value
+unsafe fn copy_mpfr(value: mpfr_srcptr) -> Result<Float, RivalError> {
+    if value.is_null() {
+        return Err(RivalError::Misuse);
+    }
+    let precision = u32::try_from(unsafe { mpfr::get_prec(value) })
+        .map_err(|_| RivalError::Misuse)?
+        .max(2);
+    let mut float = Float::new(precision);
+    unsafe { mpfr::set(float.as_raw_mut(), value, mpfr::rnd_t::RNDN) };
+    Ok(float)
+}
+
 unsafe fn parse_input(input: &RivalInput) -> Result<Input, RivalError> {
     let kind = RivalInputKind::try_from(input.kind)?;
     Ok(match kind {
@@ -73,16 +86,7 @@ unsafe fn parse_input(input: &RivalInput) -> Result<Input, RivalError> {
         RivalInputKind::Bool => Input::Bool(unsafe { input.value.bool_value }),
         RivalInputKind::I64 => Input::from(unsafe { input.value.i64_value }),
         RivalInputKind::U64 => Input::from(unsafe { input.value.u64_value }),
-        RivalInputKind::Mpfr => {
-            let value = unsafe { input.value.mpfr_value };
-            if value.is_null() {
-                return Err(RivalError::Misuse);
-            }
-            let precision = unsafe { mpfr::get_prec(value) } as u32;
-            let mut float = Float::new(precision);
-            unsafe { mpfr::set(float.as_raw_mut(), value, mpfr::rnd_t::RNDN) };
-            Input::Float(float)
-        }
+        RivalInputKind::Mpfr => Input::Float(unsafe { copy_mpfr(input.value.mpfr_value) }?),
     })
 }
 
@@ -261,65 +265,12 @@ pub unsafe extern "C" fn rival_machine_apply_mpfr(
 
         let inputs: Vec<Input> = args
             .iter()
-            .map(|&ptr| {
-                if ptr.is_null() {
-                    return Err(RivalError::Misuse);
-                }
-                let precision = unsafe { mpfr::get_prec(ptr) } as u32;
-                let mut value = Float::new(precision);
-                unsafe { mpfr::set(value.as_raw_mut(), ptr, mpfr::rnd_t::RNDN) };
-                Ok(Input::from(value))
-            })
+            .map(|&ptr| unsafe { copy_mpfr(ptr).map(Input::from) })
             .collect::<Result<_, _>>()?;
         let outputs = machine
             .machine
             .apply(&inputs, hints, max_iterations as usize, policy)?;
         unsafe { write_outputs(&outputs, machine.machine.discretization(), out) };
-        Ok(())
-    })
-}
-
-/// Apply MPFR point values and write F32/F64 discretized outputs as doubles.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rival_machine_apply_mpfr_outputs_f64(
-    machine: *mut RivalMachine,
-    args: *const mpfr_srcptr,
-    n_args: usize,
-    hints: *const RivalHints,
-    max_iterations: u32,
-    policy: OutputPolicyCode,
-    out: *mut f64,
-    n_out: usize,
-) -> RivalError {
-    status(|| {
-        let machine = unsafe { machine.as_mut() }.ok_or(RivalError::Misuse)?;
-        if n_args != machine.n_vars
-            || n_out != machine.n_exprs
-            || !machine.machine.discretization().has_only_float_outputs()
-        {
-            return Err(RivalError::Misuse);
-        }
-        let policy = output_policy(policy)?;
-        let hints = unsafe { machine_hints(machine, hints)? };
-        let args = unsafe { c_slice(args, n_args)? };
-        let out = unsafe { c_slice_mut(out, n_out)? };
-
-        let inputs: Vec<Input> = args
-            .iter()
-            .map(|&ptr| {
-                if ptr.is_null() {
-                    return Err(RivalError::Misuse);
-                }
-                let precision = unsafe { mpfr::get_prec(ptr) } as u32;
-                let mut value = Float::new(precision);
-                unsafe { mpfr::set(value.as_raw_mut(), ptr, mpfr::rnd_t::RNDN) };
-                Ok(Input::from(value))
-            })
-            .collect::<Result<_, _>>()?;
-        let outputs = machine
-            .machine
-            .apply(&inputs, hints, max_iterations as usize, policy)?;
-        write_f64_outputs(&outputs, machine.machine.discretization(), out);
         Ok(())
     })
 }
@@ -358,43 +309,6 @@ pub unsafe extern "C" fn rival_machine_apply(
             .machine
             .apply(&inputs, hints, max_iterations as usize, policy)?;
         unsafe { write_outputs(&outputs, machine.machine.discretization(), out) };
-        Ok(())
-    })
-}
-
-/// Apply typed point values and write F32/F64 discretized outputs as doubles.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rival_machine_apply_outputs_f64(
-    machine: *mut RivalMachine,
-    args: *const RivalInput,
-    n_args: usize,
-    hints: *const RivalHints,
-    max_iterations: u32,
-    policy: OutputPolicyCode,
-    out: *mut f64,
-    n_out: usize,
-) -> RivalError {
-    status(|| {
-        let machine = unsafe { machine.as_mut() }.ok_or(RivalError::Misuse)?;
-        if n_args != machine.n_vars
-            || n_out != machine.n_exprs
-            || !machine.machine.discretization().has_only_float_outputs()
-        {
-            return Err(RivalError::Misuse);
-        }
-        let policy = output_policy(policy)?;
-        let hints = unsafe { machine_hints(machine, hints)? };
-        let args = unsafe { c_slice(args, n_args)? };
-        let out = unsafe { c_slice_mut(out, n_out)? };
-
-        let inputs = args
-            .iter()
-            .map(|input| unsafe { parse_input(input) })
-            .collect::<Result<Vec<_>, _>>()?;
-        let outputs = machine
-            .machine
-            .apply(&inputs, hints, max_iterations as usize, policy)?;
-        write_f64_outputs(&outputs, machine.machine.discretization(), out);
         Ok(())
     })
 }
@@ -459,14 +373,8 @@ pub unsafe extern "C" fn rival_machine_analyze_mpfr(
                 if lo_ptr.is_null() || hi_ptr.is_null() {
                     return Err(RivalError::Misuse);
                 }
-                let lo_precision = unsafe { mpfr::get_prec(lo_ptr) } as u32;
-                let hi_precision = unsafe { mpfr::get_prec(hi_ptr) } as u32;
-                let mut lo = Float::new(lo_precision);
-                let mut hi = Float::new(hi_precision);
-                unsafe {
-                    mpfr::set(lo.as_raw_mut(), lo_ptr, mpfr::rnd_t::RNDN);
-                    mpfr::set(hi.as_raw_mut(), hi_ptr, mpfr::rnd_t::RNDN);
-                }
+                let lo = unsafe { copy_mpfr(lo_ptr)? };
+                let hi = unsafe { copy_mpfr(hi_ptr)? };
                 Ok(Input::from(CoreInputRange::new(lo, hi)))
             })
             .collect::<Result<Vec<_>, RivalError>>()?;

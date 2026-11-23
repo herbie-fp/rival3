@@ -281,18 +281,6 @@ RivalError rival_machine_apply_mpfr(RivalMachine *machine,
                                     size_t n_out);
 
 /**
- * Apply MPFR point values and write F32/F64 discretized outputs as doubles.
- */
-RivalError rival_machine_apply_mpfr_outputs_f64(RivalMachine *machine,
-                                                const mpfr_srcptr *args,
-                                                size_t n_args,
-                                                const RivalHints *hints,
-                                                uint32_t max_iterations,
-                                                RivalOutputPolicy policy,
-                                                double *out,
-                                                size_t n_out);
-
-/**
  * Apply typed point values. Text inputs are parsed by Rust at each
  * instruction's working precision.
  */
@@ -304,18 +292,6 @@ RivalError rival_machine_apply(RivalMachine *machine,
                                RivalOutputPolicy policy,
                                const mpfr_ptr *out,
                                size_t n_out);
-
-/**
- * Apply typed point values and write F32/F64 discretized outputs as doubles.
- */
-RivalError rival_machine_apply_outputs_f64(RivalMachine *machine,
-                                           const RivalInput *args,
-                                           size_t n_args,
-                                           const RivalHints *hints,
-                                           uint32_t max_iterations,
-                                           RivalOutputPolicy policy,
-                                           double *out,
-                                           size_t n_out);
 
 RivalError rival_machine_apply_f64(RivalMachine *machine,
                                    const double *args,
