@@ -63,7 +63,10 @@
 (define _rival-input-value (_union _pointer _double _stdbool _int64 _uint64 _pointer))
 (define-cstruct _rival-input ([kind _uint32] [value _rival-input-value]))
 
-(define (text->c-string text)
+(define (text->c-string text who)
+  (when (string-contains? text (string #\nul))
+    (raise-arguments-error who "input string contains an embedded NUL character"
+                           "input" text))
   (define bytes (string->bytes/utf-8 text))
   (define ptr (malloc (add1 (bytes-length bytes)) 'atomic-interior))
   (for ([i (in-range (bytes-length bytes))])
@@ -79,7 +82,7 @@
 ;;    U64 = 4,
 ;;    Mpfr = 5,
 
-(define (rival-input-for value)
+(define (rival-input-for value [who 'rival-apply])
   (define (tag kind ctype raw owner)
     (values (make-rival-input kind (cast raw ctype _rival-input-value)) owner))
   (cond
@@ -91,22 +94,22 @@
     [(bigfloat? value) (tag 5 _mpfr-pointer value #f)]
     ; String input
     [(string? value)
-     (define ptr (text->c-string value))
+     (define ptr (text->c-string value who))
      (tag 0 _pointer ptr ptr)]
     ; Rational #1 or integers
     [(and (real? value) (exact? value))
-     (define ptr (text->c-string (number->string value)))
+     (define ptr (text->c-string (number->string value) who))
      (tag 0 _pointer ptr ptr)]
     ; f64
     [(flonum? value) (tag 1 _double value #f)]
     ; Rational #2
     [(and (real? value) (inexact? value))
      (define exact-value (inexact->exact value))
-     (define ptr (text->c-string (number->string exact-value)))
+     (define ptr (text->c-string (number->string exact-value) who))
      (tag 0 _pointer ptr ptr)]
     [else
      (raise-argument-error
-      'rival-apply "real number, boolean, string, or bigfloat" value)]))
+      who "real number, boolean, string, or bigfloat" value)]))
 
 (define boolean-discretization (discretization 'bool 53 bf->bool))
 (define flonum-discretization (discretization 'f64 53 bigfloat->flonum))
@@ -282,9 +285,11 @@
                     _size
                     _pointer
                     _rival-output-policy
-                    (analysis : (_ptr o _rival-analysis))
-                    (converged : (_ptr o _stdbool))
-                    (hints : (_ptr o _pointer))
+                    ;; Native failures can leave outputs untouched. Initialize
+                    ;; them so the FFI wrapper never reads uninitialized data.
+                    (analysis : (_ptr io _rival-analysis) = 'valid)
+                    (converged : (_ptr io _stdbool) = #f)
+                    (hints : (_ptr io _pointer) = #f)
                     ->
                     (status : _rival-error)
                     ->
@@ -566,7 +571,7 @@
   (define n-outs (length (rival-machine-discs machine)))
   (for ([i (in-range n-args)]
         [arg (in-vector pt)])
-    (define-values (input owner) (rival-input-for arg))
+    (define-values (input owner) (rival-input-for arg 'rival-apply))
     (when owner (set! text-owners (cons owner text-owners)))
     (ptr-set! inputs _rival-input i input))
   (check-ok! 'rival-apply
@@ -580,7 +585,8 @@
                                   n-outs)
              pt)
   ;; Keep the GC-managed C strings alive for the duration of the FFI call.
-  (void text-owners)
+  (void/reference-sink text-owners)
+  (void/reference-sink pt)
   (convert-outputs machine))
 
 
@@ -604,6 +610,7 @@
                                        (rival-machine-out-buf machine)
                                        n-outs)
              pt)
+  (void/reference-sink pt)
   (copy-outputs machine))
 
 ;; Strictly <f64>* -> <f64>+
@@ -692,13 +699,13 @@
         [iv (in-vector rect)])
     (for ([j (in-range 2)]
           [endpoint (in-list (list (ival-lo iv) (ival-hi iv)))])
-      (define-values (input owner) (rival-input-for endpoint))
+      (define-values (input owner) (rival-input-for endpoint who))
       (when owner (set! text-owners (cons owner text-owners)))
       (ptr-set! inputs _rival-input (+ (* 2 i) j) input)))
   (define results (call-with-values (lambda () (proc inputs n-args)) list))
   ;; `inputs` contains raw C pointers, so the GC cannot find these owners by
   ;; scanning the array. Keep them reachable until the FFI call has returned.
-  (void text-owners)
+  (void/reference-sink text-owners)
   (apply values results))
 
 (define (analysis->ival analysis)
@@ -719,10 +726,10 @@
 (define (finish-analysis who rect proc)
   (define-values (status analysis _ hints-ptr)
     (proc))
+  (check-ok! who status rect)
   ;; The native API uses the same entry point for both calls; no-hints
   ;; callers discard the returned hints immediately.
   (when hints-ptr (rival_hints_free hints-ptr))
-  (check-ok! who status rect)
   (analysis->ival analysis))
 
 ;;;;;;;;;;;;;;;;;;;;;; GENERAL ;;;;;;;;;;;;;;;;;;;;;;;;;;;
