@@ -135,7 +135,12 @@
       who "real number, boolean, string, or bigfloat" value)]))
 
 (define boolean-discretization (discretization 'bool 53 bf->bool))
-(define flonum-discretization (discretization 'f64 53 bigfloat->flonum))
+(define flonum-discretization
+  (discretization 'f64 53
+                  (lambda (value)
+                    ;; Match the native f64 convergence check.
+                    (parameterize ([bf-rounding-mode 'nearest])
+                      (bigfloat->flonum value)))))
 
 (define *rival-max-precision* (make-parameter 10000))
 (define *rival-max-iterations* (make-parameter 5))
