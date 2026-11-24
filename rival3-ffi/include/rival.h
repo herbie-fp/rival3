@@ -277,7 +277,7 @@ RivalError rival_machine_apply_mpfr(RivalMachine *machine,
                                     const RivalHints *hints,
                                     uint32_t max_iterations,
                                     RivalOutputPolicy policy,
-                                    const mpfr_ptr *out,
+                                    mpfr_srcptr *out,
                                     size_t n_out);
 
 /**
@@ -290,7 +290,7 @@ RivalError rival_machine_apply(RivalMachine *machine,
                                const RivalHints *hints,
                                uint32_t max_iterations,
                                RivalOutputPolicy policy,
-                               const mpfr_ptr *out,
+                               mpfr_srcptr *out,
                                size_t n_out);
 
 RivalError rival_machine_apply_f64(RivalMachine *machine,

@@ -3,9 +3,9 @@ use crate::expr::{RivalExpr, RivalExprBuilder};
 use crate::options::RivalMachineOptions;
 use crate::profile::InstructionNames;
 use crate::{
-    DiscTypeCode, OutputPolicyCode, RivalError, c_slice, c_slice_mut, mpfr_ptr, mpfr_srcptr, status,
+    DiscTypeCode, OutputPolicyCode, RivalError, c_slice, c_slice_mut, mpfr_srcptr, status,
 };
-use gmp_mpfr_sys::mpfr::{self, mpfr_t};
+use gmp_mpfr_sys::mpfr;
 use num_enum::TryFromPrimitive;
 use rival::{
     Discretization, Hint, Input, InputRange as CoreInputRange, Ival, Machine, MachineBuilder,
@@ -16,6 +16,7 @@ use std::ffi::{CStr, c_char};
 
 pub struct RivalMachine {
     pub(crate) machine: Machine<RivalDiscretization>,
+    mpfr_outputs: Vec<Float>,
     pub(crate) instruction_names: InstructionNames,
     pub(crate) n_vars: usize,
     pub(crate) n_exprs: usize,
@@ -147,14 +148,19 @@ unsafe fn machine_hints<'a>(
     }
 }
 
-unsafe fn write_outputs(outputs: &[Ival], disc: &RivalDiscretization, out: &[*mut mpfr_t]) {
-    for (i, (&out_ptr, val)) in out.iter().zip(outputs).enumerate() {
-        if val.error_flags().total() {
-            unsafe { mpfr::set_nan(out_ptr) };
-        } else {
-            let value = disc.convert(i, val.lo());
-            unsafe { mpfr::set(out_ptr, value.as_raw(), mpfr::rnd_t::RNDN) };
-        }
+fn write_outputs(machine: &mut RivalMachine, outputs: &[Ival], out: &mut [mpfr_srcptr]) {
+    machine.mpfr_outputs = outputs
+        .iter()
+        .map(|val| {
+            if val.error_flags().total() {
+                Float::with_val(2, rug::float::Special::Nan)
+            } else {
+                val.lo().clone()
+            }
+        })
+        .collect();
+    for (slot, value) in out.iter_mut().zip(&machine.mpfr_outputs) {
+        *slot = value.as_raw();
     }
 }
 
@@ -200,6 +206,7 @@ pub unsafe extern "C" fn rival_machine_new(
 
         let machine = Box::new(RivalMachine {
             machine,
+            mpfr_outputs: Vec::new(),
             instruction_names,
             n_vars,
             n_exprs,
@@ -246,7 +253,7 @@ pub unsafe extern "C" fn rival_machine_apply_mpfr(
     hints: *const RivalHints,
     max_iterations: u32,
     policy: OutputPolicyCode,
-    out: *const mpfr_ptr,
+    out: *mut mpfr_srcptr,
     n_out: usize,
 ) -> RivalError {
     status(|| {
@@ -257,11 +264,7 @@ pub unsafe extern "C" fn rival_machine_apply_mpfr(
         let policy = output_policy(policy)?;
         let hints = unsafe { machine_hints(machine, hints)? };
         let args = unsafe { c_slice(args, n_args)? };
-        let out = unsafe { c_slice(out, n_out)? };
-        // Check every output before running, so a bad one leaves all of them untouched.
-        if out.iter().any(|ptr| ptr.is_null()) {
-            return Err(RivalError::Misuse);
-        }
+        let out = unsafe { c_slice_mut(out, n_out)? };
 
         let inputs: Vec<Input> = args
             .iter()
@@ -270,7 +273,7 @@ pub unsafe extern "C" fn rival_machine_apply_mpfr(
         let outputs = machine
             .machine
             .apply(&inputs, hints, max_iterations as usize, policy)?;
-        unsafe { write_outputs(&outputs, machine.machine.discretization(), out) };
+        write_outputs(machine, &outputs, out);
         Ok(())
     })
 }
@@ -285,7 +288,7 @@ pub unsafe extern "C" fn rival_machine_apply(
     hints: *const RivalHints,
     max_iterations: u32,
     policy: OutputPolicyCode,
-    out: *const mpfr_ptr,
+    out: *mut mpfr_srcptr,
     n_out: usize,
 ) -> RivalError {
     status(|| {
@@ -296,10 +299,7 @@ pub unsafe extern "C" fn rival_machine_apply(
         let policy = output_policy(policy)?;
         let hints = unsafe { machine_hints(machine, hints)? };
         let args = unsafe { c_slice(args, n_args)? };
-        let out = unsafe { c_slice(out, n_out)? };
-        if out.iter().any(|ptr| ptr.is_null()) {
-            return Err(RivalError::Misuse);
-        }
+        let out = unsafe { c_slice_mut(out, n_out)? };
 
         let inputs = args
             .iter()
@@ -308,7 +308,7 @@ pub unsafe extern "C" fn rival_machine_apply(
         let outputs = machine
             .machine
             .apply(&inputs, hints, max_iterations as usize, policy)?;
-        unsafe { write_outputs(&outputs, machine.machine.discretization(), out) };
+        write_outputs(machine, &outputs, out);
         Ok(())
     })
 }

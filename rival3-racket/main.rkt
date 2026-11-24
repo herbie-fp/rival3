@@ -315,15 +315,14 @@
                     (values status names len)))
 
 ;; `arg-buf` holds 2 * n-vars mpfr pointers: apply uses the first n-vars,
-;; analyze uses all of them as lo/hi pairs. `arg-bfs` and `out-bfs` keep the
-;; pointed-to bigfloats alive, since the buffers are not traced.
+;; analyze uses all of them as lo/hi pairs. `arg-bfs` keeps the input bigfloats
+;; alive. `out-buf` receives borrowed pointers owned by the native machine.
 (struct rival-machine
         (ptr n-vars
              discs
              arg-buf
              arg-bfs
              out-buf
-             out-bfs
              f64-arg-buf
              f64-out-buf
              instruction-names
@@ -487,14 +486,6 @@
 
   (define arg-bfs (make-vector (* 2 n-vars) #f))
 
-  ;; Rival writes outputs already rounded to their type, so a double's precision holds them.
-  (define out-bfs
-    (parameterize ([bf-precision 53])
-      (build-vector n-exprs (lambda (_) (bf 0.0)))))
-  (for ([i (in-range n-exprs)]
-        [x (in-vector out-bfs)])
-    (ptr-set! out-buf _mpfr-pointer i x))
-
   (define-values (names-status names-ptr names-len) (rival_machine_instruction_names machine-ptr))
   (check-ok! who names-status exprs)
   (define instruction-names
@@ -509,7 +500,6 @@
                    arg-buf
                    arg-bfs
                    out-buf
-                   out-bfs
                    f64-arg-buf
                    f64-out-buf
                    instruction-names
@@ -545,6 +535,27 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; RIVAL APPLY ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;; Copy all borrowed results before invoking user conversion procedures, which
+;; may retain their arguments or call this machine again. Copy at source
+;; precision so transport does not introduce an intermediate rounding.
+(define (copy-outputs machine)
+  (define out-bfs
+    (for/vector ([i (in-range (length (rival-machine-discs machine)))])
+      (define value (ptr-ref (rival-machine-out-buf machine) _mpfr-pointer i))
+      (if (bfnan? value)
+          'invalid
+          (parameterize ([bf-precision (bigfloat-precision value)])
+            (bfcopy value)))))
+  (void/reference-sink machine)
+  out-bfs)
+
+(define (convert-outputs machine)
+  (for/vector ([value (in-vector (copy-outputs machine))]
+               [disc (in-list (rival-machine-discs machine))])
+    (if (eq? value 'invalid)
+        'invalid
+        ((discretization-convert disc) value))))
+
 ;; Strictly <text/f64/bool/int/bf>* -> <convert(bf)>+
 (define (rival-apply machine pt [hints #f] #:partial? [partial? #f])
   (define n-args (vector-length pt))
@@ -552,8 +563,7 @@
   (check-hints! 'rival-apply machine hints)
   (define inputs (malloc _rival-input (max 1 n-args) 'atomic-interior))
   (define text-owners '())
-  (define out-bfs (rival-machine-out-bfs machine))
-  (define n-outs (vector-length out-bfs))
+  (define n-outs (length (rival-machine-discs machine)))
   (for ([i (in-range n-args)]
         [arg (in-vector pt)])
     (define-values (input owner) (rival-input-for arg))
@@ -571,15 +581,10 @@
              pt)
   ;; Keep the GC-managed C strings alive for the duration of the FFI call.
   (void text-owners)
-  (for/vector #:length n-outs
-              ([bf (in-vector out-bfs)]
-               [disc (in-list (rival-machine-discs machine))])
-    (if (bfnan? bf)
-        'invalid
-        ((discretization-convert disc) bf))))
+  (convert-outputs machine))
 
 
-;; Strictly <bf>* -> <bf>+
+;; Strictly <bf>* -> <bf or invalid>+
 (define (rival-apply/mpfr machine pt [hints #f] #:partial? [partial? #f])
   (define n-args (vector-length pt))
   (check-arity! 'rival-apply/mpfr "point" machine n-args)
@@ -588,8 +593,7 @@
   (for ([i (in-range n-args)]
         [arg (in-vector pt)])
     (ptr-set! args _mpfr-pointer i arg))
-  (define out-bfs (rival-machine-out-bfs machine))
-  (define n-outs (vector-length out-bfs))
+  (define n-outs (length (rival-machine-discs machine)))
   (check-ok! 'rival-apply/mpfr
              (rival_machine_apply_mpfr machine
                                        args
@@ -600,12 +604,7 @@
                                        (rival-machine-out-buf machine)
                                        n-outs)
              pt)
-  (for/vector #:length n-outs
-              ([bf (in-vector out-bfs)]
-               [disc (in-list (rival-machine-discs machine))])
-    (if (bfnan? bf)
-        'invalid
-        bf)))
+  (copy-outputs machine))
 
 ;; Strictly <f64>* -> <f64>+
 (define (rival-apply/f64 machine pt [hints #f] #:partial? [partial? #f])
