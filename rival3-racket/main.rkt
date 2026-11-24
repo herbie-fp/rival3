@@ -62,6 +62,11 @@
 
 (define _rival-input-value (_union _pointer _double _stdbool _int64 _uint64 _pointer))
 (define-cstruct _rival-input ([kind _uint32] [value _rival-input-value]))
+(define-cstruct _rival-rational ([numerator _int64] [denominator _uint64]))
+
+(define min-i64 (- (expt 2 63)))
+(define max-i64 (sub1 (expt 2 63)))
+(define max-u64 (sub1 (expt 2 64)))
 
 (define (text->c-string text who)
   (when (string-contains? text (string #\nul))
@@ -81,10 +86,14 @@
 ;;    I64 = 3,
 ;;    U64 = 4,
 ;;    Mpfr = 5,
+;;    Rational = 6,
 
-(define (rival-input-for value [who 'rival-apply])
+(define (rival-input-for value who rational-pair-buf pair-index)
   (define (tag kind ctype raw owner)
     (values (make-rival-input kind (cast raw ctype _rival-input-value)) owner))
+  (define (text-input text)
+    (define ptr (text->c-string text who))
+    (tag 0 _pointer ptr ptr))
   (cond
     ; Bool
     ;; `_rival-input-value` is pointer-sized. Store the bool in an integer
@@ -92,21 +101,35 @@
     [(boolean? value) (tag 2 _uint64 (if value 1 0) #f)]
     ; MPFR
     [(bigfloat? value) (tag 5 _mpfr-pointer value #f)]
+    ; Integers that fit native tags avoid string conversion and parsing.
+    [(and (exact-integer? value) (<= min-i64 value max-i64))
+     (tag 3 _int64 value #f)]
+    [(and (exact-integer? value) (<= 0 value max-u64))
+     (tag 4 _uint64 value #f)]
+    ; A rational uses two native integer cells when both components fit.
+    [(and (rational? value) (exact? value) (not (integer? value)))
+     (define numerator-value (numerator value))
+     (define denominator-value (denominator value))
+     (if (and (<= min-i64 numerator-value max-i64)
+              (<= 1 denominator-value max-u64))
+         (let ([rational
+                (make-rival-rational numerator-value denominator-value)])
+           (ptr-set! rational-pair-buf _rival-rational pair-index rational)
+           (tag 6 _pointer
+                (ptr-add rational-pair-buf
+                         (* pair-index (ctype-sizeof _rival-rational)))
+                #f))
+         (text-input (number->string value)))]
     ; String input
-    [(string? value)
-     (define ptr (text->c-string value who))
-     (tag 0 _pointer ptr ptr)]
-    ; Rational #1 or integers
-    [(and (real? value) (exact? value))
-     (define ptr (text->c-string (number->string value) who))
-     (tag 0 _pointer ptr ptr)]
+    [(string? value) (text-input value)]
+    ; Exact rationals and integers outside the native ranges
+    [(and (real? value) (exact? value)) (text-input (number->string value))]
     ; f64
     [(flonum? value) (tag 1 _double value #f)]
     ; Rational #2
     [(and (real? value) (inexact? value))
      (define exact-value (inexact->exact value))
-     (define ptr (text->c-string (number->string exact-value) who))
-     (tag 0 _pointer ptr ptr)]
+     (text-input (number->string exact-value))]
     [else
      (raise-argument-error
       who "real number, boolean, string, or bigfloat" value)]))
@@ -319,14 +342,18 @@
                     ->
                     (values status names len)))
 
-;; `arg-buf` holds 2 * n-vars mpfr pointers: apply uses the first n-vars,
-;; analyze uses all of them as lo/hi pairs. `arg-bfs` keeps the input bigfloats
-;; alive. `out-buf` receives borrowed pointers owned by the native machine.
+;; `mpfr-arg-buf` holds 2 * n-vars MPFR pointers: apply uses the first
+;; n-vars, analyze uses all of them as lo/hi pairs. `arg-bfs` keeps the input
+;; bigfloats alive. `input-buf` holds tagged RivalInput structs in the same
+;; point/range layout. `out-buf` receives borrowed pointers owned by the
+;; native machine.
 (struct rival-machine
         (ptr n-vars
              discs
-             arg-buf
+             mpfr-arg-buf
              arg-bfs
+             input-buf
+             rational-pair-buf
              out-buf
              f64-arg-buf
              f64-out-buf
@@ -481,7 +508,11 @@
   (unless (eq? machine-status 'ok)
     (raise-arguments-error who "Rival rejected the expressions" "exprs" exprs))
 
-  (define arg-buf (malloc _pointer (* 2 n-vars) 'atomic-interior))
+  (define mpfr-arg-buf (malloc _pointer (* 2 n-vars) 'atomic-interior))
+  (define input-buf
+    (malloc _rival-input (max 1 (* 2 n-vars)) 'atomic-interior))
+  (define rational-pair-buf
+    (malloc _rival-rational (max 1 (* 2 n-vars)) 'atomic-interior))
   (define out-buf (malloc _pointer n-exprs 'atomic-interior))
   ;; Point application uses the first n-vars entries; analysis uses all
   ;; 2 * n-vars entries as lo/hi pairs.
@@ -502,8 +533,10 @@
     (rival-machine machine-ptr
                    n-vars
                    discs
-                   arg-buf
+                   mpfr-arg-buf
                    arg-bfs
+                   input-buf
+                   rational-pair-buf
                    out-buf
                    f64-arg-buf
                    f64-out-buf
@@ -512,6 +545,12 @@
                    profile-capacity))
   (register-finalizer machine free-machine)
   machine)
+
+(define (store-rival-input! machine index value who)
+  (define-values (input owner)
+    (rival-input-for value who (rival-machine-rational-pair-buf machine) index))
+  (ptr-set! (rival-machine-input-buf machine) _rival-input index input)
+  owner)
 
 (define (check-arity! who what machine n)
   (unless (= n (rival-machine-n-vars machine))
@@ -566,14 +605,13 @@
   (define n-args (vector-length pt))
   (check-arity! 'rival-apply "point" machine n-args)
   (check-hints! 'rival-apply machine hints)
-  (define inputs (malloc _rival-input (max 1 n-args) 'atomic-interior))
+  (define inputs (rival-machine-input-buf machine))
   (define text-owners '())
   (define n-outs (length (rival-machine-discs machine)))
   (for ([i (in-range n-args)]
         [arg (in-vector pt)])
-    (define-values (input owner) (rival-input-for arg 'rival-apply))
-    (when owner (set! text-owners (cons owner text-owners)))
-    (ptr-set! inputs _rival-input i input))
+    (define owner (store-rival-input! machine i arg 'rival-apply))
+    (when owner (set! text-owners (cons owner text-owners))))
   (check-ok! 'rival-apply
              (rival_machine_apply machine
                                   inputs
@@ -595,7 +633,7 @@
   (define n-args (vector-length pt))
   (check-arity! 'rival-apply/mpfr "point" machine n-args)
   (check-hints! 'rival-apply/mpfr machine hints)
-  (define args (rival-machine-arg-buf machine))
+  (define args (rival-machine-mpfr-arg-buf machine))
   (for ([i (in-range n-args)]
         [arg (in-vector pt)])
     (ptr-set! args _mpfr-pointer i arg))
@@ -656,7 +694,7 @@
 (define (load-rect/mpfr! who machine rect)
   (define n-args (vector-length rect))
   (check-arity! who "rectangle" machine n-args)
-  (define arg-buf (rival-machine-arg-buf machine))
+  (define arg-buf (rival-machine-mpfr-arg-buf machine))
   (define arg-bfs (rival-machine-arg-bfs machine))
   (for ([i (in-range n-args)]
         [iv (in-vector rect)])
@@ -689,19 +727,18 @@
     (ptr-set! arg-buf _double (+ (* 2 i) 1) hi))
   n-args)
 
-;; Calls `proc` with a temporary buffer of typed Rival inputs for `rect`.
+;; Calls `proc` with the reusable buffer of typed Rival inputs for `rect`.
 (define (call-with-rival-rect who machine rect proc)
   (define n-args (vector-length rect))
   (check-arity! who "rectangle" machine n-args)
-  (define inputs (malloc _rival-input (max 1 (* 2 n-args)) 'atomic-interior))
+  (define inputs (rival-machine-input-buf machine))
   (define text-owners '())
   (for ([i (in-range n-args)]
         [iv (in-vector rect)])
-    (for ([j (in-range 2)]
-          [endpoint (in-list (list (ival-lo iv) (ival-hi iv)))])
-      (define-values (input owner) (rival-input-for endpoint who))
-      (when owner (set! text-owners (cons owner text-owners)))
-      (ptr-set! inputs _rival-input (+ (* 2 i) j) input)))
+    (for ([j (in-range 2)])
+      (define endpoint (if (zero? j) (ival-lo iv) (ival-hi iv)))
+      (define owner (store-rival-input! machine (+ (* 2 i) j) endpoint who))
+      (when owner (set! text-owners (cons owner text-owners)))))
   (define results (call-with-values (lambda () (proc inputs n-args)) list))
   ;; `inputs` contains raw C pointers, so the GC cannot find these owners by
   ;; scanning the array. Keep them reachable until the FFI call has returned.
@@ -760,7 +797,7 @@
   (finish-analysis-with-hints
    'rival-analyze-with-hints/mpfr machine rect hints partial?
    (lambda ()
-     (rival_machine_analyze_mpfr machine (rival-machine-arg-buf machine) n-args hints
+     (rival_machine_analyze_mpfr machine (rival-machine-mpfr-arg-buf machine) n-args hints
                                  (output-policy partial?)))))
 
 (define (rival-analyze/mpfr machine rect #:partial? [partial? #f])
@@ -768,7 +805,7 @@
   (finish-analysis
    'rival-analyze/mpfr rect
    (lambda ()
-     (rival_machine_analyze_mpfr machine (rival-machine-arg-buf machine) n-args #f
+     (rival_machine_analyze_mpfr machine (rival-machine-mpfr-arg-buf machine) n-args #f
                                  (output-policy partial?)))))
 
 ;;;;;;;;;;;;;;;;;;;;;; F64 ;;;;;;;;;;;;;;;;;;;;;;;;;;;

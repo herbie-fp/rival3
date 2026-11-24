@@ -187,6 +187,11 @@ typedef struct RivalMachineOptions RivalMachineOptions;
 
 typedef uint32_t RivalExpr;
 
+typedef struct {
+    int64_t numerator;
+    uint64_t denominator;
+} RivalRational;
+
 typedef union {
     const char *text;
     double f64_value;
@@ -194,6 +199,7 @@ typedef union {
     int64_t i64_value;
     uint64_t u64_value;
     mpfr_srcptr mpfr_value;
+    const RivalRational *rational_value;
 } RivalInputValue;
 
 typedef struct {

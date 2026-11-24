@@ -11,7 +11,7 @@ use rival::{
     Discretization, Hint, Input, InputRange as CoreInputRange, Ival, Machine, MachineBuilder,
     OutputPolicy,
 };
-use rug::Float;
+use rug::{Float, Integer, Rational};
 use std::ffi::{CStr, c_char};
 
 pub struct RivalMachine {
@@ -35,6 +35,7 @@ pub enum RivalInputKind {
     I64 = 3,
     U64 = 4,
     Mpfr = 5,
+    Rational = 6,
 }
 
 #[repr(C)]
@@ -46,6 +47,7 @@ pub union RivalInputValue {
     pub i64_value: i64,
     pub u64_value: u64,
     pub mpfr_value: mpfr_srcptr,
+    pub rational_value: *const RivalRational,
 }
 
 #[repr(C)]
@@ -53,6 +55,13 @@ pub union RivalInputValue {
 pub struct RivalInput {
     pub kind: u32,
     pub value: RivalInputValue,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct RivalRational {
+    pub numerator: i64,
+    pub denominator: u64,
 }
 
 // Exact copy of MPFR value
@@ -76,18 +85,26 @@ unsafe fn parse_input(input: &RivalInput) -> Result<Input, RivalError> {
             if text.is_null() {
                 return Err(RivalError::Misuse);
             }
-            Input::Text(
-                unsafe { CStr::from_ptr(text) }
-                    .to_str()
-                    .map_err(|_| RivalError::Misuse)?
-                    .to_owned(),
-            )
+            let text = unsafe { CStr::from_ptr(text) }
+                .to_str()
+                .map_err(|_| RivalError::Misuse)?;
+            Input::Text(text.to_owned())
         }
         RivalInputKind::F64 => Input::F64(unsafe { input.value.f64_value }),
         RivalInputKind::Bool => Input::Bool(unsafe { input.value.bool_value }),
         RivalInputKind::I64 => Input::from(unsafe { input.value.i64_value }),
         RivalInputKind::U64 => Input::from(unsafe { input.value.u64_value }),
         RivalInputKind::Mpfr => Input::Float(unsafe { copy_mpfr(input.value.mpfr_value) }?),
+        RivalInputKind::Rational => {
+            let value = unsafe { input.value.rational_value.as_ref() }
+                .ok_or(RivalError::Misuse)?;
+            if value.denominator == 0 {
+                return Err(RivalError::Misuse);
+            }
+            let numerator = Integer::from(value.numerator);
+            let denominator = Integer::from(value.denominator);
+            Input::Rational(Rational::from((numerator, denominator)))
+        }
     })
 }
 
