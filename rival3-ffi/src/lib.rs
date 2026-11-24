@@ -48,7 +48,7 @@ pub type mpfr_srcptr = *const mpfr_t;
 #[allow(non_camel_case_types)]
 pub type mpfr_ptr = *mut mpfr_t;
 
-pub const RIVAL_ABI_VERSION: u32 = 3;
+pub const RIVAL_ABI_VERSION: u32 = 4;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rival_version() -> u32 {

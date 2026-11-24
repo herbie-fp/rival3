@@ -96,8 +96,7 @@ unsafe fn parse_input(input: &RivalInput) -> Result<Input, RivalError> {
         RivalInputKind::U64 => Input::from(unsafe { input.value.u64_value }),
         RivalInputKind::Mpfr => Input::Float(unsafe { copy_mpfr(input.value.mpfr_value) }?),
         RivalInputKind::Rational => {
-            let value = unsafe { input.value.rational_value.as_ref() }
-                .ok_or(RivalError::Misuse)?;
+            let value = unsafe { input.value.rational_value.as_ref() }.ok_or(RivalError::Misuse)?;
             if value.denominator == 0 {
                 return Err(RivalError::Misuse);
             }
@@ -263,7 +262,7 @@ pub unsafe extern "C" fn rival_machine_expr_count(machine: *const RivalMachine) 
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn rival_machine_apply_mpfr(
+pub unsafe extern "C" fn rival_machine_apply_mpfr_to_mpfr(
     machine: *mut RivalMachine,
     args: *const mpfr_srcptr,
     n_args: usize,
@@ -298,7 +297,7 @@ pub unsafe extern "C" fn rival_machine_apply_mpfr(
 /// Apply typed point values. Text inputs are parsed by Rust at each
 /// instruction's working precision.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn rival_machine_apply(
+pub unsafe extern "C" fn rival_machine_apply_any_to_mpfr(
     machine: *mut RivalMachine,
     args: *const RivalInput,
     n_args: usize,
@@ -330,8 +329,40 @@ pub unsafe extern "C" fn rival_machine_apply(
     })
 }
 
+/// Apply binary64 inputs and return full-working-precision MPFR endpoints.
+/// Output pointers are borrowed from the machine, as with `rival_machine_apply_any_to_mpfr`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn rival_machine_apply_f64(
+pub unsafe extern "C" fn rival_machine_apply_f64_to_mpfr(
+    machine: *mut RivalMachine,
+    args: *const f64,
+    n_args: usize,
+    hints: *const RivalHints,
+    max_iterations: u32,
+    policy: OutputPolicyCode,
+    out: *mut mpfr_srcptr,
+    n_out: usize,
+) -> RivalError {
+    status(|| {
+        let machine = unsafe { machine.as_mut() }.ok_or(RivalError::Misuse)?;
+        if n_args != machine.n_vars || n_out != machine.n_exprs {
+            return Err(RivalError::Misuse);
+        }
+        let policy = output_policy(policy)?;
+        let hints = unsafe { machine_hints(machine, hints)? };
+        let args = unsafe { c_slice(args, n_args)? };
+        let out = unsafe { c_slice_mut(out, n_out)? };
+
+        let inputs: Vec<Input> = args.iter().copied().map(Input::from).collect();
+        let outputs = machine
+            .machine
+            .apply(&inputs, hints, max_iterations as usize, policy)?;
+        write_outputs(machine, &outputs, out);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rival_machine_apply_f64_to_f64(
     machine: *mut RivalMachine,
     args: *const f64,
     n_args: usize,

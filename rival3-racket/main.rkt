@@ -50,9 +50,13 @@
 (define (bf->bool x)
   (and (not (bfzero? x)) #t))
 
+(define-values (bf-zero bf-one)
+  (parameterize ([bf-precision 2])
+    (values (bf 0) (bf 1))))
+
 (define (input->bf x)
   (if (boolean? x)
-      (bf (if x 1 0))
+      (if x bf-one bf-zero)
       x))
 
 (define (input->double x)
@@ -164,7 +168,7 @@
 
 (define-ffi-definer define-rival (ffi-lib lib-path))
 
-(define abi-version 3)
+(define abi-version 4)
 (define-rival rival_version (_fun -> _uint32))
 (let ([v (rival_version)])
   (unless (= v abi-version)
@@ -303,9 +307,10 @@
 
 (define _apply-fun
   (_fun _pointer _pointer _size _pointer _uint32 _rival-output-policy _pointer _size -> _rival-error))
-(define-rival rival_machine_apply _apply-fun)
-(define-rival rival_machine_apply_mpfr _apply-fun)
-(define-rival rival_machine_apply_f64 _apply-fun)
+(define-rival rival_machine_apply_any_to_mpfr _apply-fun)
+(define-rival rival_machine_apply_mpfr_to_mpfr _apply-fun)
+(define-rival rival_machine_apply_f64_to_mpfr _apply-fun)
+(define-rival rival_machine_apply_f64_to_f64 _apply-fun)
 
 (define _analyze-fun
               (_fun _pointer
@@ -610,22 +615,44 @@
   (define n-args (vector-length pt))
   (check-arity! 'rival-apply "point" machine n-args)
   (check-hints! 'rival-apply machine hints)
-  (define inputs (rival-machine-input-buf machine))
+  ;; Booleans are exact 0/1 in either homogeneous representation. Stop
+  ;; classifying once neither representation can accommodate the point.
+  (define-values (all-f64? all-mpfr?)
+    (for/fold ([all-f64? #t] [all-mpfr? #t])
+              ([arg (in-vector pt)]
+               #:break (not (or all-f64? all-mpfr?)))
+      (if (boolean? arg)
+          (values all-f64? all-mpfr?)
+          (values (and all-f64? (flonum? arg))
+                  (and all-mpfr? (bigfloat? arg))))))
   (define text-owners '())
   (define n-outs (length (rival-machine-discs machine)))
-  (for ([i (in-range n-args)]
-        [arg (in-vector pt)])
-    (define owner (store-rival-input! machine i arg 'rival-apply))
-    (when owner (set! text-owners (cons owner text-owners))))
+  (define-values (apply-proc inputs)
+    (cond
+      [all-f64?
+       (define args (rival-machine-f64-arg-buf machine))
+       (for ([i (in-range n-args)] [arg (in-vector pt)])
+         (ptr-set! args _double i (input->double arg)))
+       (values rival_machine_apply_f64_to_mpfr args)]
+      [all-mpfr?
+       (define args (rival-machine-mpfr-arg-buf machine))
+       (for ([i (in-range n-args)] [arg (in-vector pt)])
+         (ptr-set! args _mpfr-pointer i (input->bf arg)))
+       (values rival_machine_apply_mpfr_to_mpfr args)]
+      [else
+       (for ([i (in-range n-args)] [arg (in-vector pt)])
+         (define owner (store-rival-input! machine i arg 'rival-apply))
+         (when owner (set! text-owners (cons owner text-owners))))
+       (values rival_machine_apply_any_to_mpfr (rival-machine-input-buf machine))]))
   (check-ok! 'rival-apply
-             (rival_machine_apply machine
-                                  inputs
-                                  n-args
-                                  hints
-                                  (*rival-max-iterations*)
-                                  (output-policy partial?)
-                                  (rival-machine-out-buf machine)
-                                  n-outs)
+             (apply-proc machine
+                         inputs
+                         n-args
+                         hints
+                         (*rival-max-iterations*)
+                         (output-policy partial?)
+                         (rival-machine-out-buf machine)
+                         n-outs)
              pt)
   ;; Keep the GC-managed C strings alive for the duration of the FFI call.
   (void/reference-sink text-owners)
@@ -644,14 +671,14 @@
     (ptr-set! args _mpfr-pointer i arg))
   (define n-outs (length (rival-machine-discs machine)))
   (check-ok! 'rival-apply/mpfr
-             (rival_machine_apply_mpfr machine
-                                       args
-                                       n-args
-                                       hints
-                                       (*rival-max-iterations*)
-                                       (output-policy partial?)
-                                       (rival-machine-out-buf machine)
-                                       n-outs)
+             (rival_machine_apply_mpfr_to_mpfr machine
+                                              args
+                                              n-args
+                                              hints
+                                              (*rival-max-iterations*)
+                                              (output-policy partial?)
+                                              (rival-machine-out-buf machine)
+                                              n-outs)
              pt)
   (void/reference-sink pt)
   (copy-outputs machine))
@@ -669,14 +696,14 @@
   (define n-outs (length discs))
   (define outs (rival-machine-f64-out-buf machine))
   (check-ok! 'rival-apply/f64
-             (rival_machine_apply_f64 machine
-                                      args
-                                      n-args
-                                      hints
-                                      (*rival-max-iterations*)
-                                      (output-policy partial?)
-                                      outs
-                                      n-outs)
+             (rival_machine_apply_f64_to_f64 machine
+                                            args
+                                            n-args
+                                            hints
+                                            (*rival-max-iterations*)
+                                            (output-policy partial?)
+                                            outs
+                                            n-outs)
              pt)
   (for/vector #:length n-outs
               ([i (in-range n-outs)]
