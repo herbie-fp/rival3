@@ -73,7 +73,6 @@ pub struct Machine<D: Discretization> {
     pub(crate) strategy: Strategy,
     pub(crate) max_precision: u32,
     pub(crate) min_precision: u32,
-    pub(crate) lower_bound_early_stopping: bool,
     pub(crate) slack_unit: i64,
     pub(crate) bumps_activated: bool,
 }
@@ -254,7 +253,6 @@ impl<D: Discretization> MachineBuilder<D> {
             strategy: self.strategy,
             max_precision: self.max_precision,
             min_precision: self.min_precision,
-            lower_bound_early_stopping: false,
             slack_unit: self.slack_unit,
             bumps_activated: false,
             profiler: Profiler::with_capacity(self.profile_capacity),

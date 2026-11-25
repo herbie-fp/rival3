@@ -3,7 +3,7 @@
 use crate::eval::{
     instructions::InstructionData,
     machine::{Discretization, Hint, Machine},
-    tricks::{AmplBounds, TrickContext, clamp_to_bits},
+    tricks::{TrickContext, clamp_to_bits},
 };
 use itertools::{enumerate, izip};
 
@@ -13,11 +13,9 @@ pub(super) fn precision_tuning<D: Discretization>(
     hints: &[Hint],
     repeats: &[bool],
     vprecs_max: &mut [u32],
-    vprecs_min: &mut [u32],
 ) {
     let ctx = TrickContext::new(
         machine.iteration,
-        machine.lower_bound_early_stopping,
         machine.bumps_activated,
         machine.slack_unit,
     );
@@ -30,7 +28,6 @@ pub(super) fn precision_tuning<D: Discretization>(
         let instruction = &machine.instructions[idx];
         let output = &machine.registers[machine.instruction_register(idx)];
         let parent_upper = vprecs_max[idx];
-        let parent_lower = vprecs_min[idx];
         let base_precision = machine.initial_precisions[idx];
 
         vprecs_max[idx] = base_precision
@@ -46,28 +43,12 @@ pub(super) fn precision_tuning<D: Discretization>(
             | InstructionData::Constant { .. } => {}
             InstructionData::Unary { op, arg } => {
                 let bounds = ctx.bounds_for_unary(*op, output, &machine.registers[*arg]);
-                propagate_child(
-                    machine,
-                    *arg,
-                    bounds,
-                    parent_upper,
-                    parent_lower,
-                    vprecs_max,
-                    vprecs_min,
-                );
+                propagate_child(machine, *arg, bounds, parent_upper, vprecs_max);
             }
             InstructionData::UnaryParam { op, param, arg } => {
                 let bounds =
                     ctx.bounds_for_unary_param(*op, *param, output, &machine.registers[*arg]);
-                propagate_child(
-                    machine,
-                    *arg,
-                    bounds,
-                    parent_upper,
-                    parent_lower,
-                    vprecs_max,
-                    vprecs_min,
-                );
+                propagate_child(machine, *arg, bounds, parent_upper, vprecs_max);
             }
             InstructionData::Binary { op, lhs, rhs } => {
                 let (lhs_bounds, rhs_bounds) = ctx.bounds_for_binary(
@@ -76,24 +57,8 @@ pub(super) fn precision_tuning<D: Discretization>(
                     &machine.registers[*lhs],
                     &machine.registers[*rhs],
                 );
-                propagate_child(
-                    machine,
-                    *lhs,
-                    lhs_bounds,
-                    parent_upper,
-                    parent_lower,
-                    vprecs_max,
-                    vprecs_min,
-                );
-                propagate_child(
-                    machine,
-                    *rhs,
-                    rhs_bounds,
-                    parent_upper,
-                    parent_lower,
-                    vprecs_max,
-                    vprecs_min,
-                );
+                propagate_child(machine, *lhs, lhs_bounds, parent_upper, vprecs_max);
+                propagate_child(machine, *rhs, rhs_bounds, parent_upper, vprecs_max);
             }
             InstructionData::Ternary {
                 op,
@@ -108,33 +73,9 @@ pub(super) fn precision_tuning<D: Discretization>(
                     &machine.registers[*arg2],
                     &machine.registers[*arg3],
                 );
-                propagate_child(
-                    machine,
-                    *arg1,
-                    bounds1,
-                    parent_upper,
-                    parent_lower,
-                    vprecs_max,
-                    vprecs_min,
-                );
-                propagate_child(
-                    machine,
-                    *arg2,
-                    bounds2,
-                    parent_upper,
-                    parent_lower,
-                    vprecs_max,
-                    vprecs_min,
-                );
-                propagate_child(
-                    machine,
-                    *arg3,
-                    bounds3,
-                    parent_upper,
-                    parent_lower,
-                    vprecs_max,
-                    vprecs_min,
-                );
+                propagate_child(machine, *arg1, bounds1, parent_upper, vprecs_max);
+                propagate_child(machine, *arg2, bounds2, parent_upper, vprecs_max);
+                propagate_child(machine, *arg3, bounds3, parent_upper, vprecs_max);
             }
         }
     }
@@ -144,22 +85,16 @@ pub(super) fn precision_tuning<D: Discretization>(
 fn propagate_child<D: Discretization>(
     machine: &Machine<D>,
     child_reg: usize,
-    bounds: AmplBounds,
+    bounds: i64,
     parent_upper: u32,
-    parent_lower: u32,
     vprecs_max: &mut [u32],
-    vprecs_min: &mut [u32],
 ) {
     if let Some(child_idx) = machine.register_to_instruction(child_reg) {
         // TODO: We actually don't need clamp_to_bits here-- we can simply cast as u32 because we
         // assume that all stored precisions are positive and a cast won't overflow; see if there's
         // any noticeable performance difference if we don't use clamp_to_bits (likely not significant).
         vprecs_max[child_idx] = clamp_to_bits(
-            (vprecs_max[child_idx] as i64).max((parent_upper as i64).saturating_add(bounds.upper)),
-        );
-        vprecs_min[child_idx] = clamp_to_bits(
-            (vprecs_min[child_idx] as i64)
-                .max((parent_lower as i64).saturating_add(bounds.lower.max(0))),
+            (vprecs_max[child_idx] as i64).max((parent_upper as i64).saturating_add(bounds)),
         );
     }
 }

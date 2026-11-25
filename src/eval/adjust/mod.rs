@@ -121,14 +121,7 @@ fn backward_pass<D: Discretization>(machine: &mut Machine<D>, hints: &[Hint]) ->
     }
 
     // Step 2: Precision tuning.
-    let mut vprecs_min = vec![0u32; instruction_count];
-    precision_tuning(
-        machine,
-        hints,
-        &work_repeats,
-        &mut vprecs_max,
-        &mut vprecs_min,
-    );
+    precision_tuning(machine, hints, &work_repeats, &mut vprecs_max);
 
     // Step 3: Update repeats based on new precisions.
     let mut any_reevaluation =
@@ -142,13 +135,7 @@ fn backward_pass<D: Discretization>(machine: &mut Machine<D>, hints: &[Hint]) ->
         // Reset and recalculate precisions for bumps mode.
         vprecs_max.fill(0);
         work_repeats.fill(false);
-        precision_tuning(
-            machine,
-            hints,
-            &work_repeats,
-            &mut vprecs_max,
-            &mut vprecs_min,
-        );
+        precision_tuning(machine, hints, &work_repeats, &mut vprecs_max);
         any_reevaluation =
             update_repeats(machine, &mut work_repeats, &vprecs_max, first_tuning_pass);
         if !any_reevaluation {
