@@ -14,7 +14,7 @@ pub(super) fn precision_tuning<D: Discretization>(
     repeats: &[bool],
     vprecs_max: &mut [u32],
     vprecs_min: &mut [u32],
-) -> bool {
+) {
     let ctx = TrickContext::new(
         machine.iteration,
         machine.lower_bound_early_stopping,
@@ -35,15 +35,8 @@ pub(super) fn precision_tuning<D: Discretization>(
 
         vprecs_max[idx] = base_precision
             .saturating_add(parent_upper)
+            .saturating_add(clamp_to_bits(ctx.logspan(output)))
             .clamp(machine.min_precision, machine.max_precision);
-
-        if machine.lower_bound_early_stopping {
-            if parent_lower >= machine.max_precision {
-                return true;
-            }
-        } else if vprecs_max[idx] == machine.max_precision {
-            return true;
-        }
 
         // Propagate precision requirements to children based on error amplification.
         match &instruction.data {
@@ -145,7 +138,6 @@ pub(super) fn precision_tuning<D: Discretization>(
             }
         }
     }
-    false
 }
 
 /// Update a child register with propagated precision requirements

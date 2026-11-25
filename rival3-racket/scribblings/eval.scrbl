@@ -253,20 +253,13 @@ fairly-sophisticated process that can execute different operations in
 different precisions to maximize performance. Caching avoids
 re-executing instructions whose precision needs haven't changed.
 
-@deftogether[(
-  @defparam[*rival-max-precision* precision natural? #:value 10000]
-  @defparam[*rival-max-iterations* iterations natural? #:value 5]
-)]
+@defparam[*rival-max-precision* precision natural? #:value 10000]
 
-Sets the maximum precision used by Rival internally and the maximum
-iterations performed by Rival before raising the
-@racket[exn:rival:unsamplable] error. Note that Rival will stop at
-whichever of @racket[*rival-max-precision*] or
-@racket[*rival-max-iterations*] is hit first. For example, Rival may
-execute the maximum number of iterations before reaching the maximum
-precision, or choose to use a precision over the maximum before
-reaching the maximum number of iterations. The default values are
-likely sufficient for most use cases.
+@racket[*rival-max-precision*] caps the working precision used during
+refinement. Adaptive evaluation has no iteration limit: if precision tuning
+stalls, Rival retries with logspan enabled and raises
+@racket[exn:rival:unsamplable] if no further precision increase is possible.
+Baseline evaluation stops when doubling its precision would exceed the cap.
 
 @defproc[
   (rival-analyze

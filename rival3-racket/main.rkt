@@ -36,7 +36,6 @@
          (struct-out discretization)
          (struct-out ival)
          *rival-max-precision*
-         *rival-max-iterations*
          *rival-profile-executions*
          (all-from-out "ops.rkt"))
 
@@ -147,7 +146,6 @@
                       (bigfloat->flonum value)))))
 
 (define *rival-max-precision* (make-parameter 10000))
-(define *rival-max-iterations* (make-parameter 5))
 (define *rival-profile-executions* (make-parameter 1000))
 
 (define-runtime-path native-root (build-path "private" "native"))
@@ -306,7 +304,7 @@
 (define-rival rival_machine_get_profiling (_fun _pointer -> _stdbool))
 
 (define _apply-fun
-  (_fun _pointer _pointer _size _pointer _uint32 _rival-output-policy _pointer _size -> _rival-error))
+  (_fun _pointer _pointer _size _pointer _rival-output-policy _pointer _size -> _rival-error))
 (define-rival rival_machine_apply_any_to_mpfr _apply-fun)
 (define-rival rival_machine_apply_mpfr_to_mpfr _apply-fun)
 (define-rival rival_machine_apply_f64_to_mpfr _apply-fun)
@@ -649,7 +647,6 @@
                          inputs
                          n-args
                          hints
-                         (*rival-max-iterations*)
                          (output-policy partial?)
                          (rival-machine-out-buf machine)
                          n-outs)
@@ -675,7 +672,6 @@
                                               args
                                               n-args
                                               hints
-                                              (*rival-max-iterations*)
                                               (output-policy partial?)
                                               (rival-machine-out-buf machine)
                                               n-outs)
@@ -700,7 +696,6 @@
                                             args
                                             n-args
                                             hints
-                                            (*rival-max-iterations*)
                                             (output-policy partial?)
                                             outs
                                             n-outs)
