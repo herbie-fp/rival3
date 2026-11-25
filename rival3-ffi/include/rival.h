@@ -177,6 +177,23 @@ enum RivalOutputPolicy
 typedef uint32_t RivalOutputPolicy;
 #endif // __cplusplus
 
+enum RivalInputKind
+#ifdef __cplusplus
+  : uint32_t
+#endif // __cplusplus
+ {
+    RIVAL_INPUT_KIND_TEXT = 0,
+    RIVAL_INPUT_KIND_F64 = 1,
+    RIVAL_INPUT_KIND_BOOL = 2,
+    RIVAL_INPUT_KIND_I64 = 3,
+    RIVAL_INPUT_KIND_U64 = 4,
+    RIVAL_INPUT_KIND_MPFR = 5,
+    RIVAL_INPUT_KIND_RATIONAL = 6,
+};
+#ifndef __cplusplus
+typedef uint32_t RivalInputKind;
+#endif // __cplusplus
+
 typedef struct RivalExprBuilder RivalExprBuilder;
 
 typedef struct RivalHints RivalHints;
