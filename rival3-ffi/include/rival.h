@@ -355,6 +355,12 @@ RivalError rival_machine_analyze_f64(RivalMachine *machine,
                                      bool *out_converged,
                                      RivalHints **out_hints);
 
+/**
+ * Enable the adaptive upper-bound precision-cap early exit at compilation.
+ * Disabled by default; baseline evaluation ignores this option.
+ */
+RivalError rival_machine_options_set_early_exit(RivalMachineOptions *options, bool enabled);
+
 RivalError rival_machine_options_new(RivalMachineOptions **out);
 
 void rival_machine_options_free(RivalMachineOptions *options);

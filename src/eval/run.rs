@@ -45,6 +45,8 @@ impl<D: Discretization> Machine<D> {
     /// Adaptive evaluation has no iteration limit. If tuning stalls, it retries
     /// with logspan enabled and gives up if no further precision increase is
     /// possible. Working precisions are capped by [`Machine::max_precision`].
+    /// Opting into [`MachineBuilder::early_exit`](super::machine::MachineBuilder::early_exit)
+    /// instead stops as soon as an adaptive tuning target reaches that cap.
     /// A [`Strategy::Baseline`] machine gives up when doubling its precision
     /// would exceed that cap.
     ///
@@ -472,7 +474,8 @@ pub enum RivalError {
     #[error("Invalid input for rival machine")]
     InvalidInput,
     /// Rival was unable to correctly round the output within the
-    /// configured precision cap: refinement could make no further progress.
+    /// configured precision cap, either because refinement could make no
+    /// further progress or because the optional precision-cap early exit fired.
     #[error("Unsamplable input for rival machine")]
     Unsamplable,
 }

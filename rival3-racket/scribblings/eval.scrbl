@@ -128,7 +128,8 @@ real expression using @racket[rival-compile].
   (rival-compile
     [exprs (listof rival-expr?)]
     [vars (listof symbol?)]
-    [discretizations (listof discretization)])
+    [discretizations (listof discretization)]
+    [#:early-exit? early-exit? boolean? #f])
   rival-machine?]{
 @racket[exprs] is a list of real-number expressions, using the grammar described above.
 @racket[vars] is a list of the free variables of these expressions.
@@ -138,6 +139,12 @@ An empty @racket[vars] list can be provided if the expressions have no free vari
 Returns a @racket[rival-machine?], an opaque type that can be passed to
   @racket[rival-apply] to evaluate the compiled real expression
   on a specific point.
+The optional @racket[#:early-exit?] flag is fixed at compilation and defaults
+to @racket[#f]. When enabled, adaptive evaluation raises
+@racket[exn:rival:unsamplable] as soon as a tuned upper-bound precision reaches
+@racket[*rival-max-precision*], before executing that plan. This can reject
+inputs that would otherwise succeed at the cap. This keyword is available
+only on @racket[rival-compile].
 }
 
 Internally, @racket[rival-compile] translates the @racket[exprs]
@@ -260,6 +267,8 @@ refinement. Adaptive evaluation has no iteration limit: if precision tuning
 stalls, Rival retries with logspan enabled and raises
 @racket[exn:rival:unsamplable] if no further precision increase is possible.
 Baseline evaluation stops when doubling its precision would exceed the cap.
+With @racket[#:early-exit? #t], adaptive evaluation instead stops when a tuned
+precision reaches the cap.
 
 @defproc[
   (rival-analyze

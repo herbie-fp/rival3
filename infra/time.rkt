@@ -67,7 +67,7 @@
   (define start-compile (current-inexact-milliseconds))
   (define rival-machine
     (parameterize ([*rival-max-precision* 32256])
-      (rival-compile exprs vars discs)))
+      (rival-compile exprs vars discs #:early-exit? #f)))
   (define compile-time (- (current-inexact-milliseconds) start-compile))
 
   ; Baseline and Sollya machines
