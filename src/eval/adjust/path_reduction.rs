@@ -41,15 +41,9 @@ where
 }
 
 /// Schedule the instruction that feeds the provided register for execution
-pub(super) fn schedule_child<D: Discretization>(
-    hints: &mut [Hint],
-    machine: &Machine<D>,
-    reg: usize,
-) {
-    if let Some(idx) = machine.register_to_instruction(reg)
-        && !matches!(hints[idx], Hint::KnownBool(_) | Hint::Alias(_))
-    {
-        hints[idx] = Hint::Execute;
+pub(super) fn schedule_child(hints: &mut [Hint], reg: usize) {
+    if !matches!(hints[reg], Hint::KnownBool(_) | Hint::Alias(_)) {
+        hints[reg] = Hint::Execute;
     }
 }
 
@@ -62,7 +56,7 @@ pub fn bool_op_path_reduce<D: Discretization, F>(
 where
     F: FnMut(usize),
 {
-    let out_reg = machine.instruction_register(idx);
+    let out_reg = idx;
     if let Some(value) = machine.registers[out_reg].known_bool() {
         return PathOutcome::known_bool(value);
     }
@@ -85,7 +79,7 @@ pub fn not_op_path_reduce<D: Discretization, F>(
 where
     F: FnMut(usize),
 {
-    let out_reg = machine.instruction_register(idx);
+    let out_reg = idx;
     if let Some(value) = machine.registers[out_reg].known_bool() {
         return PathOutcome::known_bool(value);
     }
