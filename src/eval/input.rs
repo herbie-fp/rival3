@@ -41,6 +41,9 @@ impl InputRange {
     }
 
     pub(crate) fn to_ival(&self, precision: u32) -> Result<Ival, ParseIvalError> {
+        if self.lower.is_range() || self.upper.is_range() {
+            return Err(ParseIvalError);
+        }
         let lower = Ival::with_val(precision, &self.lower)?;
         let upper = Ival::with_val(precision, &self.upper)?;
         if lower.lo() > upper.hi() {
