@@ -4,7 +4,7 @@ use rug::{Float, Integer, Rational};
 
 use crate::{ErrorFlags, IntoIval, Ival, ParseIvalError};
 
-/// A scalar runtime input whose enclosure can be recomputed at a requested precision.
+/// A runtime value whose enclosure can be recomputed at a requested precision.
 ///
 /// Strings retain their exact spelling, rationals retain their exact value,
 /// and floating-point inputs retain their existing binary value.
@@ -17,6 +17,12 @@ pub enum Input {
     Rational(Rational),
     Text(String),
     Range(Box<InputRange>),
+}
+
+impl Input {
+    pub(crate) fn is_range(&self) -> bool {
+        matches!(self, Self::Range(_))
+    }
 }
 
 /// A runtime interval specified by its lower and upper values.
@@ -84,44 +90,30 @@ impl IntoIval for Input {
 macro_rules! from_input {
     ($($ty:ty => $variant:ident),+ $(,)?) => {$(
         impl From<$ty> for Input {
-            fn from(value: $ty) -> Self { Self::$variant(value) }
+            fn from(value: $ty) -> Self { Self::$variant(value.into()) }
         }
     )+};
 }
-from_input!(bool => Bool, f64 => F64, Float => Float, Integer => Integer,
-            Rational => Rational, String => Text);
-
-impl From<InputRange> for Input {
-    fn from(value: InputRange) -> Self {
-        Self::Range(Box::new(value))
-    }
-}
-
-impl From<&str> for Input {
-    fn from(value: &str) -> Self {
-        Self::Text(value.to_owned())
-    }
-}
-
-impl From<f32> for Input {
-    fn from(value: f32) -> Self {
-        Self::F64(f64::from(value))
-    }
-}
-
-macro_rules! from_integer {
-    ($($ty:ty),+ $(,)?) => {$(
-        impl From<$ty> for Input {
-            fn from(value: $ty) -> Self { Self::Integer(Integer::from(value)) }
-        }
-    )+};
-}
-from_integer!(
-    i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize
+from_input!(
+    bool => Bool,
+    f32 => F64,
+    f64 => F64,
+    Float => Float,
+    Integer => Integer,
+    Rational => Rational,
+    String => Text,
+    &str => Text,
+    InputRange => Range,
+    i8 => Integer,
+    i16 => Integer,
+    i32 => Integer,
+    i64 => Integer,
+    i128 => Integer,
+    isize => Integer,
+    u8 => Integer,
+    u16 => Integer,
+    u32 => Integer,
+    u64 => Integer,
+    u128 => Integer,
+    usize => Integer,
 );
-
-impl Input {
-    pub(crate) fn is_range(&self) -> bool {
-        matches!(self, Self::Range(_))
-    }
-}
