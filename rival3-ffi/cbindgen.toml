@@ -17,6 +17,7 @@ include = [
     "RivalTernaryOp",
     "RivalStrategy",
     "RivalOutputPolicy",
+    "RivalInputKind",
 ]
 
 exclude = [

@@ -8,10 +8,9 @@ use crate::{
 use gmp_mpfr_sys::mpfr;
 use num_enum::TryFromPrimitive;
 use rival::{
-    Discretization, Hint, Input, InputRange as CoreInputRange, Ival, Machine, MachineBuilder,
-    OutputPolicy,
+    Discretization, Hint, Input, InputRange, Ival, Machine, MachineBuilder, OutputPolicy,
 };
-use rug::{Float, Integer, Rational};
+use rug::{Float, Rational};
 use std::ffi::{CStr, c_char};
 
 pub struct RivalMachine {
@@ -100,9 +99,7 @@ unsafe fn parse_input(input: &RivalInput) -> Result<Input, RivalError> {
             if value.denominator == 0 {
                 return Err(RivalError::Misuse);
             }
-            let numerator = Integer::from(value.numerator);
-            let denominator = Integer::from(value.denominator);
-            Input::Rational(Rational::from((numerator, denominator)))
+            Input::Rational(Rational::from((value.numerator, value.denominator)))
         }
     })
 }
@@ -415,13 +412,9 @@ pub unsafe extern "C" fn rival_machine_analyze_mpfr(
         let bounds = rect
             .chunks_exact(2)
             .map(|pair| {
-                let (lo_ptr, hi_ptr) = (pair[0], pair[1]);
-                if lo_ptr.is_null() || hi_ptr.is_null() {
-                    return Err(RivalError::Misuse);
-                }
-                let lo = unsafe { copy_mpfr(lo_ptr)? };
-                let hi = unsafe { copy_mpfr(hi_ptr)? };
-                Ok(Input::from(CoreInputRange::new(lo, hi)))
+                let lo = unsafe { copy_mpfr(pair[0])? };
+                let hi = unsafe { copy_mpfr(pair[1])? };
+                Ok(Input::from(InputRange::new(lo, hi)))
             })
             .collect::<Result<Vec<_>, RivalError>>()?;
         let (failure, hints, converged) =
@@ -468,7 +461,7 @@ pub unsafe extern "C" fn rival_machine_analyze(
         let bounds = bounds
             .chunks_exact(2)
             .map(|pair| unsafe {
-                Ok(Input::from(CoreInputRange::new(
+                Ok(Input::from(InputRange::new(
                     parse_input(&pair[0])?,
                     parse_input(&pair[1])?,
                 )))
@@ -513,7 +506,7 @@ pub unsafe extern "C" fn rival_machine_analyze_f64(
         let bounds = unsafe { c_slice(bounds, n_bounds)? };
         let bounds: Vec<Input> = bounds
             .chunks_exact(2)
-            .map(|pair| Input::from(CoreInputRange::new(pair[0], pair[1])))
+            .map(|pair| Input::from(InputRange::new(pair[0], pair[1])))
             .collect();
         let (failure, hints, converged) =
             machine.machine.analyze_with_hints(&bounds, hints, policy)?;
