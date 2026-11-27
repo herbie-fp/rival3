@@ -7,6 +7,7 @@ use thiserror::Error;
 
 use crate::eval::{
     execute,
+    input::Input,
     machine::{Discretization, Hint, Machine, Strategy},
     profile::Execution,
 };
@@ -24,7 +25,13 @@ pub enum OutputPolicy {
 
 impl<D: Discretization> Machine<D> {
     /// Evaluate the compiled real expressions on an input point
-    /// represented as a slice of intervals.
+    /// represented as a slice of typed inputs.
+    ///
+    /// Input conversion instructions call [`Ival::with_val`] at the precision
+    /// requested by the evaluation strategy, retaining original values for
+    /// refinement. [`Input::from`] accepts strings, booleans, primitive numbers,
+    /// and Rug numeric types. Inputs may change type between calls. All declared
+    /// arguments must be supplied, including unused ones.
     ///
     /// `args` must be the same length as the `vars` passed to
     /// [`MachineBuilder::build`](super::machine::MachineBuilder::build). The output is a vector of output
@@ -46,18 +53,27 @@ impl<D: Discretization> Machine<D> {
     /// [`OutputPolicy`].
     /// Returns [`RivalError::Unsamplable`] if Rival is unable to
     /// evaluate at least one expression.
+    /// Returns [`RivalError::InputParse`] for malformed strings encountered
+    /// during evaluation, with the argument index.
     ///
     /// Under [`OutputPolicy::AllowPartial`], totally invalid outputs are
     /// returned in place, while every non-error output must still be
     /// correctly rounded.
     pub fn apply(
         &mut self,
-        args: &[Ival],
+        args: &[Input],
         hint: Option<&[Hint]>,
         max_iterations: usize,
         policy: OutputPolicy,
     ) -> Result<Vec<Ival>, RivalError> {
-        self.load_arguments(args);
+        assert_eq!(args.len(), self.arguments.len(), "Argument count mismatch");
+        if let Some((index, _)) = args.iter().enumerate().find(|(_, input)| input.is_range()) {
+            return Err(RivalError::InputShape {
+                index,
+                expected: "point",
+            });
+        }
+        self.reset_evaluation(args.len());
         let hint_storage;
         let hint_slice: &[Hint] = if let Some(h) = hint {
             h
@@ -67,19 +83,20 @@ impl<D: Discretization> Machine<D> {
         };
 
         match self.strategy {
-            Strategy::Adaptive => self.apply_adaptive(hint_slice, max_iterations, policy),
-            Strategy::Baseline => self.apply_baseline(hint_slice, policy),
+            Strategy::Adaptive => self.apply_adaptive(args, hint_slice, max_iterations, policy),
+            Strategy::Baseline => self.apply_baseline(args, hint_slice, policy),
         }
     }
 
     fn apply_adaptive(
         &mut self,
+        args: &[Input],
         hints: &[Hint],
         max_iterations: usize,
         policy: OutputPolicy,
     ) -> Result<Vec<Ival>, RivalError> {
         for iteration in 0..max_iterations {
-            if let Some(results) = self.run_iteration(iteration, hints, policy)? {
+            if let Some(results) = self.run_iteration(args, iteration, hints, policy)? {
                 return Ok(results);
             }
         }
@@ -89,6 +106,7 @@ impl<D: Discretization> Machine<D> {
 
     fn apply_baseline(
         &mut self,
+        args: &[Input],
         hints: &[Hint],
         policy: OutputPolicy,
     ) -> Result<Vec<Ival>, RivalError> {
@@ -98,7 +116,7 @@ impl<D: Discretization> Machine<D> {
         loop {
             self.iteration = iter;
             self.baseline_adjust(prec);
-            self.run_with_hint(hints);
+            self.run_with_hint(args, hints)?;
 
             match self.collect_outputs(policy)? {
                 Some(outputs) => return Ok(outputs),
@@ -117,6 +135,7 @@ impl<D: Discretization> Machine<D> {
     /// Run a single iteration with precision tuning and hint-guided evaluation.
     pub(crate) fn run_iteration(
         &mut self,
+        args: &[Input],
         iteration: usize,
         hints: &[Hint],
         policy: OutputPolicy,
@@ -126,7 +145,7 @@ impl<D: Discretization> Machine<D> {
         if self.adjust(hints) {
             return Err(RivalError::Unsamplable);
         }
-        self.run_with_hint(hints);
+        self.run_with_hint(args, hints)?;
         self.collect_outputs(policy)
     }
 
@@ -145,11 +164,18 @@ impl<D: Discretization> Machine<D> {
     /// - `converged` indicates whether the analysis has converged.
     pub fn analyze_with_hints(
         &mut self,
-        rect: &[Ival],
+        rect: &[Input],
         hint: Option<&[Hint]>,
         policy: OutputPolicy,
-    ) -> (Ival, Vec<Hint>, bool) {
-        self.load_arguments(rect);
+    ) -> Result<(Ival, Vec<Hint>, bool), RivalError> {
+        assert_eq!(rect.len(), self.arguments.len(), "Argument count mismatch");
+        if let Some((index, _)) = rect.iter().enumerate().find(|(_, input)| !input.is_range()) {
+            return Err(RivalError::InputShape {
+                index,
+                expected: "box",
+            });
+        }
+        self.reset_evaluation(rect.len());
 
         // Use provided hint or default.
         let tmp;
@@ -168,32 +194,28 @@ impl<D: Discretization> Machine<D> {
             }
             Strategy::Baseline => self.baseline_adjust(self.disc.target().saturating_add(10)),
         }
-        self.run_with_hint(hint_slice);
+        self.run_with_hint(rect, hint_slice)?;
 
         let (good, _done, bad, stuck) = self.return_flags(policy);
         let (next_hint, converged) = self.make_hint(hint_slice);
 
         let status = Ival::bool_interval(bad || stuck, (!good) || stuck);
-        (status, next_hint, converged)
+        Ok((status, next_hint, converged))
     }
 
-    /// Analyze a hyper-rectangle and return only the boolean interval status.
-    ///
-    /// Returns the status described by [`Machine::analyze_with_hints`].
-    ///
-    /// The advantage of `analyze` over `apply` is that it applies to
-    /// whole ranges of input points and is much faster.
-    pub fn analyze(&mut self, rect: &[Ival], policy: OutputPolicy) -> Ival {
-        let (status, _hint, _conv) = self.analyze_with_hints(rect, None, policy);
-        status
+    /// Analyze an input rectangle with typed lower and upper endpoints.
+    pub fn analyze(&mut self, rect: &[Input], policy: OutputPolicy) -> Result<Ival, RivalError> {
+        self.analyze_with_hints(rect, None, policy)
+            .map(|(status, _, _)| status)
     }
 
-    /// Load argument intervals into the front of the register file.
-    pub(crate) fn load_arguments(&mut self, args: &[Ival]) {
-        assert_eq!(args.len(), self.arguments.len(), "Argument count mismatch");
-        for (register, arg) in self.registers.iter_mut().zip(args) {
-            register.clone_from(arg);
-        }
+    /// Reset per-call evaluation state after checking the argument count.
+    fn reset_evaluation(&mut self, argument_count: usize) {
+        assert_eq!(
+            argument_count,
+            self.arguments.len(),
+            "Argument count mismatch"
+        );
         self.bumps = 0;
         self.bumps_activated = false;
         self.iteration = 0;
@@ -204,7 +226,8 @@ impl<D: Discretization> Machine<D> {
     }
 
     /// Execute instructions once using the supplied precision and hint plan.
-    fn run_with_hint(&mut self, hints: &[Hint]) {
+    fn run_with_hint(&mut self, args: &[Input], hints: &[Hint]) -> Result<(), RivalError> {
+        assert_eq!(hints.len(), self.instructions.len(), "hint length mismatch");
         // On the first iteration use the initial plan; subsequent iterations use tuned state.
         let (precisions, repeats) = if self.iteration == 0 {
             (&self.initial_precisions[..], &self.initial_repeats[..])
@@ -218,7 +241,7 @@ impl<D: Discretization> Machine<D> {
             if repeat {
                 continue;
             }
-            let out_reg = self.instruction_register(idx);
+            let out_reg = idx;
 
             // Hints can override execution.
             match hint {
@@ -226,7 +249,12 @@ impl<D: Discretization> Machine<D> {
                 Hint::Execute => {
                     if self.profiling_enabled {
                         let start = Instant::now();
-                        execute::evaluate_instruction(instruction, &mut self.registers, precision);
+                        execute::evaluate_instruction(
+                            instruction,
+                            &mut self.registers,
+                            precision,
+                            args,
+                        )?;
                         let dt = start.elapsed().as_secs_f64() * 1000.0;
                         let exec = Execution {
                             name: instruction.data.name_static(),
@@ -237,7 +265,12 @@ impl<D: Discretization> Machine<D> {
                         };
                         self.profiler.record(exec);
                     } else {
-                        execute::evaluate_instruction(instruction, &mut self.registers, precision)
+                        execute::evaluate_instruction(
+                            instruction,
+                            &mut self.registers,
+                            precision,
+                            args,
+                        )?;
                     }
                 }
                 // Path reduction aliasing the output of an instruction to one of its inputs.
@@ -261,6 +294,7 @@ impl<D: Discretization> Machine<D> {
                 }
             }
         }
+        Ok(())
     }
 
     fn baseline_adjust(&mut self, new_prec: u32) {
@@ -276,30 +310,24 @@ impl<D: Discretization> Machine<D> {
         self.precisions.fill(new_prec);
 
         if self.iteration != 0 {
-            let var_count = self.arguments.len();
-
             // Determine which instructions can affect outputs (must be executed).
             let mut useful = vec![false; instruction_count];
             for &root in &self.outputs {
-                if let Some(idx) = self.register_to_instruction(root) {
-                    useful[idx] = true;
-                }
+                useful[root] = true;
             }
 
             for idx in (0..instruction_count).rev() {
                 if !useful[idx] {
                     continue;
                 }
-                let out_reg = self.instruction_register(idx);
+                let out_reg = idx;
                 let reg = &self.registers[out_reg];
                 if reg.lo.immovable && reg.hi.immovable {
                     useful[idx] = false;
                     continue;
                 }
                 self.instructions[idx].for_each_input(|reg| {
-                    if reg >= var_count {
-                        useful[reg - var_count] = true;
-                    }
+                    useful[reg] = true;
                 });
             }
 
@@ -311,7 +339,7 @@ impl<D: Discretization> Machine<D> {
                 let mut inputs_stable = true;
                 if is_constant {
                     self.instructions[idx].for_each_input(|reg| {
-                        if reg >= var_count && !self.repeats[reg - var_count] {
+                        if !self.repeats[reg] {
                             inputs_stable = false;
                         }
                     });
@@ -415,6 +443,18 @@ impl<D: Discretization> Machine<D> {
 /// the input invalid.
 #[derive(Error, Debug)]
 pub enum RivalError {
+    /// A runtime string could not be parsed; `index` is its argument position.
+    #[error("Could not parse input {index}: {source}")]
+    InputParse {
+        index: usize,
+        source: crate::ParseIvalError,
+    },
+    /// Argument has the wrong shape for point evaluation or box analysis.
+    #[error("Input {index} must be a {expected}")]
+    InputShape {
+        index: usize,
+        expected: &'static str,
+    },
     /// The input point is invalid under the evaluation policy being used.
     ///
     /// For example, taking the square root of a negative number, or

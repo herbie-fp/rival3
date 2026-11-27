@@ -43,6 +43,12 @@ impl Hash for HashRational {
     }
 }
 
+/// Index of a runtime value supplied to the compiled program.
+///
+/// Input slots are external sources, not machine registers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct InputIndex(pub usize);
+
 /// Register machine instruction with output register index and payload data
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Instruction {
@@ -53,6 +59,10 @@ pub struct Instruction {
 /// Payload for an instruction covering literal, constant, and operator variants
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum InstructionData {
+    /// Convert a runtime input slot to an interval at this instruction's precision.
+    WithVal {
+        input: InputIndex,
+    },
     Literal {
         value: HashFloat,
     },
@@ -139,7 +149,8 @@ impl InstructionData {
     /// Visit each input register index for this payload variant
     pub fn for_each_input(&self, mut f: impl FnMut(usize)) {
         match self {
-            InstructionData::Literal { .. }
+            InstructionData::WithVal { .. }
+            | InstructionData::Literal { .. }
             | InstructionData::Rational { .. }
             | InstructionData::Constant { .. } => {}
             InstructionData::Unary { arg, .. } => f(*arg),
@@ -175,6 +186,7 @@ impl InstructionData {
     /// Return an operation name for profiling/debugging
     pub fn name_static(&self) -> &'static str {
         match self {
+            InstructionData::WithVal { .. } => "with_val",
             InstructionData::Literal { .. } => "literal",
             InstructionData::Rational { .. } => "rational",
             InstructionData::Constant { op } => name_of_constant(*op),

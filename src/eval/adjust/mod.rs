@@ -31,9 +31,7 @@ impl<D: Discretization> Machine<D> {
 
         // Roots should always be executed.
         for &root in &self.outputs {
-            if let Some(idx) = self.register_to_instruction(root) {
-                hints[idx] = Hint::Execute;
-            }
+            hints[root] = Hint::Execute;
         }
 
         for idx in (0..len).rev() {
@@ -49,7 +47,7 @@ impl<D: Discretization> Machine<D> {
                     }
                     Hint::Alias(pos) => {
                         if let Some(reg) = self.instructions[idx].data.input_at(*pos as usize) {
-                            schedule_child(&mut hints, self, reg);
+                            schedule_child(&mut hints, reg);
                         }
                         hints[idx] = Hint::Alias(*pos);
                         continue;
@@ -60,7 +58,7 @@ impl<D: Discretization> Machine<D> {
                 converged = false;
             }
 
-            let mut schedule = |reg: usize| schedule_child(&mut hints, self, reg);
+            let mut schedule = |reg: usize| schedule_child(&mut hints, reg);
             let outcome = path_reduction(self, idx, &mut schedule);
 
             converged = converged && outcome.converged;
@@ -89,8 +87,8 @@ fn backward_pass<D: Discretization>(machine: &mut Machine<D>, hints: &[Hint]) ->
     // Slack grows exponentially with iteration to push intervals away from boundaries.
     let slack = slack_bits(machine.iteration, machine.slack_unit);
     for (&root, &boundary_issue) in machine.outputs.iter().zip(machine.output_distance.iter()) {
-        if boundary_issue && let Some(idx) = machine.register_to_instruction(root) {
-            vprecs_max[idx] = vprecs_max[idx].max(slack);
+        if boundary_issue {
+            vprecs_max[root] = vprecs_max[root].max(slack);
         }
     }
 
@@ -98,9 +96,7 @@ fn backward_pass<D: Discretization>(machine: &mut Machine<D>, hints: &[Hint]) ->
 
     // Mark all outputs for reevaluation.
     for &root in &machine.outputs {
-        if let Some(idx) = machine.register_to_instruction(root) {
-            work_repeats[idx] = false;
-        }
+        work_repeats[root] = false;
     }
 
     // Traverse instructions from outputs to inputs to mark necessary reevaluations.
@@ -108,17 +104,14 @@ fn backward_pass<D: Discretization>(machine: &mut Machine<D>, hints: &[Hint]) ->
         if work_repeats[idx] {
             continue;
         }
-        let reg = &machine.registers[machine.instruction_register(idx)];
+        let reg = &machine.registers[idx];
         if reg.lo.immovable && reg.hi.immovable {
             work_repeats[idx] = true;
             continue;
         }
 
-        let var_count = machine.arguments.len();
         let mut mark = |reg: usize| {
-            if reg >= var_count {
-                work_repeats[reg - var_count] = false;
-            }
+            work_repeats[reg] = false;
         };
         path_reduction(machine, idx, &mut mark);
     }

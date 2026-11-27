@@ -7,6 +7,7 @@ pub(crate) mod run;
 pub(crate) mod adjust;
 pub(crate) mod builder;
 pub(crate) mod execute;
+pub(crate) mod input;
 pub(crate) mod instructions;
 pub(crate) mod macros;
 pub(crate) mod ops;

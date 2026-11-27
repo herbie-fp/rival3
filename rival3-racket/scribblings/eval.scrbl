@@ -72,10 +72,13 @@ preconditions, tests, @code{try}/@code{catch} blocks, and others.
 @section{Intervals}
 
 @defstruct*[ival
-  ([lo (or/c bigfloat? boolean?)]
-   [hi (or/c bigfloat? boolean?)])]{
+  ([lo any/c]
+   [hi any/c])]{
 An interval with endpoints @racket[lo] and @racket[hi].
-For real-valued intervals, both endpoints are @racket[bigfloat?] values.
+The general analysis API accepts the same endpoint values as @racket[rival-apply]:
+strings, exact or inexact real numbers, booleans, and @racket[bigfloat?]
+values. The @racket[rival-analyze/mpfr] and @racket[rival-analyze/f64]
+variants require bigfloat and flonum endpoints, respectively.
 For boolean intervals returned by @racket[rival-analyze], a true
 @racket[lo] means definite failure; otherwise, a true @racket[hi]
 means possible failure.
@@ -159,18 +162,25 @@ can be evaluated at specific input points using @racket[rival-apply].
 @defproc[
   (rival-apply
     [machine rival-machine?]
-    [point (vectorof (or/c bigfloat? boolean?))]
+    [point (vectorof (or/c real? string? bigfloat? boolean?))]
     [hints (or/c rival-hints? #f) #f]
     [#:partial? partial? any/c #f])
   (vectorof (or/c T 'invalid))]{
 Evaluates the compiled real expression on an input point represented
-as a vector of bigfloats and booleans. @racket[point] must be the same length as
+as a vector of typed Rival values. @racket[point] must be the same length as
 the list @racket[vars] passed to @racket[rival-compile]. The output
 is a vector of output values of the same length as the @racket[exprs]
 passed to @racket[rival-compile]. Moreover, the output values are
 the same types @racket[T] as used in the corresponding @racket[discretization].
 The optional @racket[hints] argument, if provided, can be obtained
 from @racket[rival-analyze-with-hints] and may improve performance.
+
+Native results are transferred as MPFR values at their full working precision.
+Racket makes independent bigfloat copies and calls each discretization's
+@racket[convert] procedure to obtain the final output. The supplied bigfloat is
+an interval endpoint whose rounding to the compiled output type has converged;
+it is not guaranteed to round correctly to an arbitrary different type.
+Conversion procedures must agree with the discretization's @racket[type].
 
 If the @racket[point] is an invalid input to at least one of the
 @racket[exprs] passed to @racket[rival-compile], @racket[rival-apply]
@@ -184,6 +194,23 @@ output positions contain @racket['invalid], and
 @racket[exn:rival:invalid] is raised only when every output is invalid.
 Pass @racket[#:partial? #t] to @racket[rival-analyze-with-hints] too
 when analysis must use this policy.
+}
+
+@defproc[
+  (rival-apply/mpfr
+    [machine rival-machine?]
+    [point (vectorof bigfloat?)]
+    [hints (or/c rival-hints? #f) #f]
+    [#:partial? partial? any/c #f])
+  (vectorof (or/c bigfloat? 'invalid))]{
+Like @racket[rival-apply], but accepts only bigfloat inputs and uses the native
+MPFR input API. Each valid output is an unconverted bigfloat endpoint at its
+full working precision; invalid outputs are @racket['invalid] when
+@racket[#:partial? #t] permits them. The discretization's @racket[convert]
+procedure is not called. Returned bigfloats are independent copies and remain
+valid across later calls to the machine. Convergence still uses the compiled
+discretization; the bigfloat is not necessarily correctly rounded to an
+arbitrary different output type.
 }
 
 @defproc[
@@ -253,6 +280,26 @@ described above.
 }
 
 @defproc[
+  (rival-analyze/mpfr
+    [machine rival-machine?]
+    [input-ranges (vectorof ival?)]
+    [#:partial? partial? any/c #f])
+  ival?]{
+Like @racket[rival-analyze], but accepts only @racket[bigfloat?]
+endpoints and passes them directly to Rival's MPFR API.
+}
+
+@defproc[
+  (rival-analyze/f64
+    [machine rival-machine?]
+    [input-ranges (vectorof ival?)]
+    [#:partial? partial? any/c #f])
+  ival?]{
+Like @racket[rival-analyze], but accepts only @racket[flonum?]
+endpoints and uses Rival's f64 API.
+}
+
+@defproc[
   (rival-analyze-with-hints
     [machine rival-machine?]
     [input-ranges (vectorof ival?)]
@@ -265,6 +312,26 @@ result (a boolean @racket[ival?]), an opaque @racket[rival-hints?]
 value (or @racket[#f]) that can be passed to subsequent calls to
 @racket[rival-analyze-with-hints] or @racket[rival-apply], and a
 boolean indicating whether the analysis converged.
+}
+
+@defproc[
+  (rival-analyze-with-hints/mpfr
+    [machine rival-machine?]
+    [input-ranges (vectorof ival?)]
+    [hints (or/c rival-hints? #f) #f]
+    [#:partial? partial? any/c #f])
+  (list/c ival? (or/c rival-hints? #f) boolean?)]{
+The MPFR-endpoint counterpart of @racket[rival-analyze-with-hints].
+}
+
+@defproc[
+  (rival-analyze-with-hints/f64
+    [machine rival-machine?]
+    [input-ranges (vectorof ival?)]
+    [hints (or/c rival-hints? #f) #f]
+    [#:partial? partial? any/c #f])
+  (list/c ival? (or/c rival-hints? #f) boolean?)]{
+The f64-endpoint counterpart of @racket[rival-analyze-with-hints].
 }
 
 @defproc[(rival-hints? [v any/c]) boolean?]{

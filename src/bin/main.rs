@@ -1,9 +1,9 @@
 use ascii_table::{Align, AsciiTable};
 use rival::{
-    Discretization, Execution, Expression, ExpressionBuilder, Ival, MachineBuilder, OutputPolicy,
+    Discretization, Execution, Expression, ExpressionBuilder, Input, MachineBuilder, OutputPolicy,
     RivalError,
 };
-use rug::{Assign, Float, Rational};
+use rug::{Float, Rational};
 use std::env;
 use std::fmt::Display;
 use std::iter::Peekable;
@@ -355,33 +355,13 @@ fn main() {
         .max_precision(10000)
         .build(&expressions, &[expr]);
 
-    let arg_prec = machine.argument_precision();
-    let arg_ivals: Vec<Ival> = values
-        .iter()
-        .map(|s| {
-            let mut ival = Ival::zero(arg_prec);
-            if let Ok(rat) = s.parse::<Rational>() {
-                let f = Float::with_val(arg_prec, &rat);
-                ival.lo_mut().assign(&f);
-                ival.hi_mut().assign(&f);
-            } else if let Ok(f) = Float::parse(s) {
-                let f = Float::with_val(arg_prec, f);
-                ival.lo_mut().assign(&f);
-                ival.hi_mut().assign(&f);
-            } else if let Ok(v) = s.parse::<f64>() {
-                ival.f64_assign(v);
-            } else {
-                panic!("Invalid value: {}", s);
-            }
-            ival
-        })
-        .collect();
+    let inputs: Vec<Input> = values.into_iter().map(Input::from).collect();
 
     // Warm-up run just like the racket repl.
-    let _ = machine.apply(&arg_ivals, None, 5, OutputPolicy::AllowPartial);
+    let _ = machine.apply(&inputs, None, 5, OutputPolicy::AllowPartial);
 
     let start = Instant::now();
-    let result = machine.apply(&arg_ivals, None, 10, OutputPolicy::AllowPartial);
+    let result = machine.apply(&inputs, None, 10, OutputPolicy::AllowPartial);
     let total_time = start.elapsed().as_secs_f64() * 1000.0;
 
     let execs: Vec<Execution> = machine.execution_records().to_vec();
@@ -411,6 +391,12 @@ fn main() {
         }
         Err(RivalError::InvalidInput) => {
             println!("\nError: Invalid input");
+        }
+        Err(RivalError::InputParse { index, source }) => {
+            println!("\nError: Could not parse input {index}: {source}");
+        }
+        Err(RivalError::InputShape { index, expected }) => {
+            println!("\nError: Input {index} must be a {expected}");
         }
         Err(RivalError::Unsamplable) => {
             println!("\nError: Could not converge");

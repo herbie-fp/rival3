@@ -9,10 +9,16 @@
          "ops.rkt")
 
 ;; No contract for functions that tend to be extremely hot.
-(provide rival-apply
-         rival-apply/f64
-         rival-analyze-with-hints
-         rival-analyze)
+;; RivalI = text/f64/bool/int/bf
+(provide rival-apply                    ; <RivalI>*         -> <convert(bf)>+
+         rival-apply/mpfr               ; <bf>*             -> <bf>+
+         rival-apply/f64                ; <f64>*            -> <f64>+
+         rival-analyze-with-hints       ; <RivalI, RivalI>* -> <ival[bool]>+
+         rival-analyze-with-hints/mpfr  ; <bf, bf>*         -> <ival[bool]>+
+         rival-analyze-with-hints/f64   ; <f64, f64>*       -> <ival[bool]>+
+         rival-analyze                  ; <RivalI, RivalI>* -> <ival[bool]>+
+         rival-analyze/mpfr             ; <bf, bf>*         -> <ival[bool]>+
+         rival-analyze/f64)             ; <f64, f64>*       -> <ival[bool]>+
 
 (provide (contract-out [rival-compile compile/c]
                        [baseline-compile compile/c]
@@ -44,9 +50,13 @@
 (define (bf->bool x)
   (and (not (bfzero? x)) #t))
 
+(define-values (bf-zero bf-one)
+  (parameterize ([bf-precision 2])
+    (values (bf 0) (bf 1))))
+
 (define (input->bf x)
   (if (boolean? x)
-      (bf (if x 1 0))
+      (if x bf-one bf-zero)
       x))
 
 (define (input->double x)
@@ -54,8 +64,91 @@
       (if x 1.0 0.0)
       x))
 
+(define _rival-input-value (_union _pointer _double _stdbool _int64 _uint64 _pointer))
+(define-cstruct _rival-input ([kind _uint32] [value _rival-input-value]))
+(define-cstruct _rival-rational ([numerator _int64] [denominator _uint64]))
+
+(define min-i64 (- (expt 2 63)))
+(define max-i64 (sub1 (expt 2 63)))
+(define max-u64 (sub1 (expt 2 64)))
+
+(define (text->c-string text who)
+  (when (string-contains? text (string #\nul))
+    (raise-arguments-error who "input string contains an embedded NUL character"
+                           "input" text))
+  (define bytes (string->bytes/utf-8 text))
+  (define ptr (malloc (add1 (bytes-length bytes)) 'atomic-interior))
+  (for ([i (in-range (bytes-length bytes))])
+    (ptr-set! ptr _ubyte i (bytes-ref bytes i)))
+  (ptr-set! ptr _ubyte (bytes-length bytes) 0)
+  ptr)
+
+;; TAGS:
+;;    Text = 0,
+;;    F64 = 1,
+;;    Bool = 2,
+;;    I64 = 3,
+;;    U64 = 4,
+;;    Mpfr = 5,
+;;    Rational = 6,
+
+(define (rival-input-for value who rational-pair-buf pair-index)
+  (define (tag kind ctype raw owner)
+    (values (make-rival-input kind (cast raw ctype _rival-input-value)) owner))
+  (define (text-input text)
+    (define ptr (text->c-string text who))
+    (tag 0 _pointer ptr ptr))
+  (define (bool-input value)
+    (define storage (malloc _rival-input-value 'atomic-interior))
+    (memset storage 0 (ctype-sizeof _rival-input-value))
+    (define union-value (ptr-ref storage _rival-input-value))
+    (union-set! union-value 2 value)
+    (values (make-rival-input 2 union-value) storage))
+  (cond
+    ; Bool
+    [(boolean? value) (bool-input value)]
+    ; MPFR
+    [(bigfloat? value) (tag 5 _mpfr-pointer value #f)]
+    ; Integers that fit native tags avoid string conversion and parsing.
+    [(and (exact-integer? value) (<= min-i64 value max-i64))
+     (tag 3 _int64 value #f)]
+    [(and (exact-integer? value) (<= 0 value max-u64))
+     (tag 4 _uint64 value #f)]
+    ; A rational uses two native integer cells when both components fit.
+    [(and (rational? value) (exact? value) (not (integer? value)))
+     (define numerator-value (numerator value))
+     (define denominator-value (denominator value))
+     (if (and (<= min-i64 numerator-value max-i64)
+              (<= 1 denominator-value max-u64))
+         (let ([rational
+                (make-rival-rational numerator-value denominator-value)])
+           (ptr-set! rational-pair-buf _rival-rational pair-index rational)
+           (tag 6 _pointer
+                (ptr-add rational-pair-buf
+                         (* pair-index (ctype-sizeof _rival-rational)))
+                #f))
+         (text-input (number->string value)))]
+    ; String input
+    [(string? value) (text-input value)]
+    ; Exact rationals and integers outside the native ranges
+    [(and (real? value) (exact? value)) (text-input (number->string value))]
+    ; f64
+    [(flonum? value) (tag 1 _double value #f)]
+    ; Rational #2
+    [(and (real? value) (inexact? value))
+     (define exact-value (inexact->exact value))
+     (text-input (number->string exact-value))]
+    [else
+     (raise-argument-error
+      who "real number, boolean, string, or bigfloat" value)]))
+
 (define boolean-discretization (discretization 'bool 53 bf->bool))
-(define flonum-discretization (discretization 'f64 53 bigfloat->flonum))
+(define flonum-discretization
+  (discretization 'f64 53
+                  (lambda (value)
+                    ;; Match the native f64 convergence check.
+                    (parameterize ([bf-rounding-mode 'nearest])
+                      (bigfloat->flonum value)))))
 
 (define *rival-max-precision* (make-parameter 10000))
 (define *rival-max-iterations* (make-parameter 5))
@@ -79,7 +172,7 @@
 
 (define-ffi-definer define-rival (ffi-lib lib-path))
 
-(define abi-version 3)
+(define abi-version 4)
 (define-rival rival_version (_fun -> _uint32))
 (let ([v (rival_version)])
   (unless (= v abi-version)
@@ -218,36 +311,29 @@
 
 (define _apply-fun
   (_fun _pointer _pointer _size _pointer _uint32 _rival-output-policy _pointer _size -> _rival-error))
-(define-rival rival_machine_apply _apply-fun)
-(define-rival rival_machine_apply_f64 _apply-fun)
+(define-rival rival_machine_apply_any_to_mpfr _apply-fun)
+(define-rival rival_machine_apply_mpfr_to_mpfr _apply-fun)
+(define-rival rival_machine_apply_f64_to_mpfr _apply-fun)
+(define-rival rival_machine_apply_f64_to_f64 _apply-fun)
 
-(define-rival rival_machine_analyze
+(define _analyze-fun
               (_fun _pointer
                     _pointer
                     _size
                     _pointer
                     _rival-output-policy
-                    (analysis : (_ptr o _rival-analysis))
-                    (converged : (_ptr o _stdbool))
-                    (hints : (_ptr o _pointer))
+                    ;; Native failures can leave outputs untouched. Initialize
+                    ;; them so the FFI wrapper never reads uninitialized data.
+                    (analysis : (_ptr io _rival-analysis) = 'valid)
+                    (converged : (_ptr io _stdbool) = #f)
+                    (hints : (_ptr io _pointer) = #f)
                     ->
                     (status : _rival-error)
                     ->
                     (values status analysis converged hints)))
-(define-rival rival_machine_analyze/no-hints
-              (_fun _pointer
-                    _pointer
-                    _size
-                    (_pointer = #f)
-                    _rival-output-policy
-                    (analysis : (_ptr o _rival-analysis))
-                    (_pointer = #f)
-                    (_pointer = #f)
-                    ->
-                    (status : _rival-error)
-                    ->
-                    (values status analysis))
-              #:c-id rival_machine_analyze)
+(define-rival rival_machine_analyze _analyze-fun)
+(define-rival rival_machine_analyze_mpfr _analyze-fun)
+(define-rival rival_machine_analyze_f64 _analyze-fun)
 
 (define-rival rival_hints_free (_fun _pointer -> _void))
 
@@ -270,16 +356,19 @@
                     ->
                     (values status names len)))
 
-;; `arg-buf` holds 2 * n-vars mpfr pointers: apply uses the first n-vars,
-;; analyze uses all of them as lo/hi pairs. `arg-bfs` and `out-bfs` keep the
-;; pointed-to bigfloats alive, since the buffers are not traced.
+;; `mpfr-arg-buf` holds 2 * n-vars MPFR pointers: apply uses the first
+;; n-vars, analyze uses all of them as lo/hi pairs. `arg-bfs` keeps the input
+;; bigfloats alive. `input-buf` holds tagged RivalInput structs in the same
+;; point/range layout. `out-buf` receives borrowed pointers owned by the
+;; native machine.
 (struct rival-machine
         (ptr n-vars
              discs
-             arg-buf
+             mpfr-arg-buf
              arg-bfs
+             input-buf
+             rational-pair-buf
              out-buf
-             out-bfs
              f64-arg-buf
              f64-out-buf
              instruction-names
@@ -433,21 +522,19 @@
   (unless (eq? machine-status 'ok)
     (raise-arguments-error who "Rival rejected the expressions" "exprs" exprs))
 
-  (define arg-buf (malloc _pointer (* 2 n-vars) 'atomic-interior))
+  (define mpfr-arg-buf (malloc _pointer (* 2 n-vars) 'atomic-interior))
+  (define input-buf
+    (malloc _rival-input (max 1 (* 2 n-vars)) 'atomic-interior))
+  (define rational-pair-buf
+    (malloc _rival-rational (max 1 (* 2 n-vars)) 'atomic-interior))
   (define out-buf (malloc _pointer n-exprs 'atomic-interior))
-  (define f64-arg-buf (malloc _double n-vars 'atomic-interior))
+  ;; Point application uses the first n-vars entries; analysis uses all
+  ;; 2 * n-vars entries as lo/hi pairs.
+  (define f64-arg-buf (malloc _double (* 2 n-vars) 'atomic-interior))
   (define f64-out-buf (malloc _double n-exprs 'atomic-interior))
   (define exec-buf (malloc _execution-record profile-capacity 'atomic-interior))
 
   (define arg-bfs (make-vector (* 2 n-vars) #f))
-
-  ;; Rival writes outputs already rounded to their type, so a double's precision holds them.
-  (define out-bfs
-    (parameterize ([bf-precision 53])
-      (build-vector n-exprs (lambda (_) (bf 0.0)))))
-  (for ([i (in-range n-exprs)]
-        [x (in-vector out-bfs)])
-    (ptr-set! out-buf _mpfr-pointer i x))
 
   (define-values (names-status names-ptr names-len) (rival_machine_instruction_names machine-ptr))
   (check-ok! who names-status exprs)
@@ -460,10 +547,11 @@
     (rival-machine machine-ptr
                    n-vars
                    discs
-                   arg-buf
+                   mpfr-arg-buf
                    arg-bfs
+                   input-buf
+                   rational-pair-buf
                    out-buf
-                   out-bfs
                    f64-arg-buf
                    f64-out-buf
                    instruction-names
@@ -471,6 +559,12 @@
                    profile-capacity))
   (register-finalizer machine free-machine)
   machine)
+
+(define (store-rival-input! machine index value who)
+  (define-values (input owner)
+    (rival-input-for value who (rival-machine-rational-pair-buf machine) index))
+  (ptr-set! (rival-machine-input-buf machine) _rival-input index input)
+  owner)
 
 (define (check-arity! who what machine n)
   (unless (= n (rival-machine-n-vars machine))
@@ -496,36 +590,104 @@
 (define (output-policy partial?)
   (if partial? 'allow_partial 'require_all))
 
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; RIVAL APPLY ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; Copy all borrowed results before invoking user conversion procedures, which
+;; may retain their arguments or call this machine again. Copy at source
+;; precision so transport does not introduce an intermediate rounding.
+(define (copy-outputs machine)
+  (define out-bfs
+    (for/vector ([i (in-range (length (rival-machine-discs machine)))])
+      (define value (ptr-ref (rival-machine-out-buf machine) _mpfr-pointer i))
+      (if (bfnan? value)
+          'invalid
+          (parameterize ([bf-precision (bigfloat-precision value)])
+            (bfcopy value)))))
+  (void/reference-sink machine)
+  out-bfs)
+
+(define (convert-outputs machine)
+  (for/vector ([value (in-vector (copy-outputs machine))]
+               [disc (in-list (rival-machine-discs machine))])
+    (if (eq? value 'invalid)
+        'invalid
+        ((discretization-convert disc) value))))
+
+;; Strictly <text/f64/bool/int/bf>* -> <convert(bf)>+
 (define (rival-apply machine pt [hints #f] #:partial? [partial? #f])
   (define n-args (vector-length pt))
   (check-arity! 'rival-apply "point" machine n-args)
   (check-hints! 'rival-apply machine hints)
-  (define arg-buf (rival-machine-arg-buf machine))
-  (define arg-bfs (rival-machine-arg-bfs machine))
+  ;; Booleans are exact 0/1 in either homogeneous representation. Stop
+  ;; classifying once neither representation can accommodate the point.
+  (define-values (all-f64? all-mpfr?)
+    (for/fold ([all-f64? #t] [all-mpfr? #t])
+              ([arg (in-vector pt)]
+               #:break (not (or all-f64? all-mpfr?)))
+      (if (boolean? arg)
+          (values all-f64? all-mpfr?)
+          (values (and all-f64? (flonum? arg))
+                  (and all-mpfr? (bigfloat? arg))))))
+  (define text-owners '())
+  (define n-outs (length (rival-machine-discs machine)))
+  (define-values (apply-proc inputs)
+    (cond
+      [all-f64?
+       (define args (rival-machine-f64-arg-buf machine))
+       (for ([i (in-range n-args)] [arg (in-vector pt)])
+         (ptr-set! args _double i (input->double arg)))
+       (values rival_machine_apply_f64_to_mpfr args)]
+      [all-mpfr?
+       (define args (rival-machine-mpfr-arg-buf machine))
+       (for ([i (in-range n-args)] [arg (in-vector pt)])
+         (ptr-set! args _mpfr-pointer i (input->bf arg)))
+       (values rival_machine_apply_mpfr_to_mpfr args)]
+      [else
+       (for ([i (in-range n-args)] [arg (in-vector pt)])
+         (define owner (store-rival-input! machine i arg 'rival-apply))
+         (when owner (set! text-owners (cons owner text-owners))))
+       (values rival_machine_apply_any_to_mpfr (rival-machine-input-buf machine))]))
+  (check-ok! 'rival-apply
+             (apply-proc machine
+                         inputs
+                         n-args
+                         hints
+                         (*rival-max-iterations*)
+                         (output-policy partial?)
+                         (rival-machine-out-buf machine)
+                         n-outs)
+             pt)
+  ;; Keep the GC-managed C strings alive for the duration of the FFI call.
+  (void/reference-sink text-owners)
+  (void/reference-sink pt)
+  (convert-outputs machine))
+
+
+;; Strictly <bf>* -> <bf or invalid>+
+(define (rival-apply/mpfr machine pt [hints #f] #:partial? [partial? #f])
+  (define n-args (vector-length pt))
+  (check-arity! 'rival-apply/mpfr "point" machine n-args)
+  (check-hints! 'rival-apply/mpfr machine hints)
+  (define args (rival-machine-mpfr-arg-buf machine))
   (for ([i (in-range n-args)]
         [arg (in-vector pt)])
-    (define x (input->bf arg))
-    (vector-set! arg-bfs i x)
-    (ptr-set! arg-buf _mpfr-pointer i x))
-  (define out-bfs (rival-machine-out-bfs machine))
-  (define n-outs (vector-length out-bfs))
-  (check-ok! 'rival-apply
-             (rival_machine_apply machine
-                                  arg-buf
-                                  n-args
-                                  hints
-                                  (*rival-max-iterations*)
-                                  (output-policy partial?)
-                                  (rival-machine-out-buf machine)
-                                  n-outs)
+    (ptr-set! args _mpfr-pointer i arg))
+  (define n-outs (length (rival-machine-discs machine)))
+  (check-ok! 'rival-apply/mpfr
+             (rival_machine_apply_mpfr_to_mpfr machine
+                                              args
+                                              n-args
+                                              hints
+                                              (*rival-max-iterations*)
+                                              (output-policy partial?)
+                                              (rival-machine-out-buf machine)
+                                              n-outs)
              pt)
-  (for/vector #:length n-outs
-              ([bf (in-vector out-bfs)]
-               [disc (in-list (rival-machine-discs machine))])
-    (if (bfnan? bf)
-        'invalid
-        ((discretization-convert disc) bf))))
+  (void/reference-sink pt)
+  (copy-outputs machine))
 
+;; Strictly <f64>* -> <f64>+
 (define (rival-apply/f64 machine pt [hints #f] #:partial? [partial? #f])
   (define n-args (vector-length pt))
   (check-arity! 'rival-apply/f64 "point" machine n-args)
@@ -538,14 +700,14 @@
   (define n-outs (length discs))
   (define outs (rival-machine-f64-out-buf machine))
   (check-ok! 'rival-apply/f64
-             (rival_machine_apply_f64 machine
-                                      args
-                                      n-args
-                                      hints
-                                      (*rival-max-iterations*)
-                                      (output-policy partial?)
-                                      outs
-                                      n-outs)
+             (rival_machine_apply_f64_to_f64 machine
+                                            args
+                                            n-args
+                                            hints
+                                            (*rival-max-iterations*)
+                                            (output-policy partial?)
+                                            outs
+                                            n-outs)
              pt)
   (for/vector #:length n-outs
               ([i (in-range n-outs)]
@@ -556,21 +718,68 @@
       [(eq? (discretization-type disc) 'bool) (not (zero? x))]
       [else x])))
 
-;; Loads `rect` into the machine's argument buffer and returns its length.
-(define (load-rect! who machine rect)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; RIVAL ANALYZE ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;; HELPERS ;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+;; Loads a strictly-MPFR `rect` into the machine's argument buffer and returns
+;; its length. The bigfloats must be retained separately since foreign buffers
+;; are not traced by the GC.
+(define (load-rect/mpfr! who machine rect)
   (define n-args (vector-length rect))
   (check-arity! who "rectangle" machine n-args)
-  (define arg-buf (rival-machine-arg-buf machine))
+  (define arg-buf (rival-machine-mpfr-arg-buf machine))
   (define arg-bfs (rival-machine-arg-bfs machine))
   (for ([i (in-range n-args)]
         [iv (in-vector rect)])
-    (define lo (input->bf (ival-lo iv)))
-    (define hi (input->bf (ival-hi iv)))
+    (define lo (ival-lo iv))
+    (define hi (ival-hi iv))
+    (unless (bigfloat? lo)
+      (raise-argument-error who "bigfloat? lower bound" lo))
+    (unless (bigfloat? hi)
+      (raise-argument-error who "bigfloat? upper bound" hi))
     (vector-set! arg-bfs (* 2 i) lo)
     (vector-set! arg-bfs (+ (* 2 i) 1) hi)
     (ptr-set! arg-buf _mpfr-pointer (* 2 i) lo)
     (ptr-set! arg-buf _mpfr-pointer (+ (* 2 i) 1) hi))
   n-args)
+
+;; Loads a strictly-f64 `rect` into the machine's f64 argument buffer.
+(define (load-rect/f64! who machine rect)
+  (define n-args (vector-length rect))
+  (check-arity! who "rectangle" machine n-args)
+  (define arg-buf (rival-machine-f64-arg-buf machine))
+  (for ([i (in-range n-args)]
+        [iv (in-vector rect)])
+    (define lo (ival-lo iv))
+    (define hi (ival-hi iv))
+    (unless (flonum? lo)
+      (raise-argument-error who "flonum? lower bound" lo))
+    (unless (flonum? hi)
+      (raise-argument-error who "flonum? upper bound" hi))
+    (ptr-set! arg-buf _double (* 2 i) lo)
+    (ptr-set! arg-buf _double (+ (* 2 i) 1) hi))
+  n-args)
+
+;; Calls `proc` with the reusable buffer of typed Rival inputs for `rect`.
+(define (call-with-rival-rect who machine rect proc)
+  (define n-args (vector-length rect))
+  (check-arity! who "rectangle" machine n-args)
+  (define inputs (rival-machine-input-buf machine))
+  (define text-owners '())
+  (for ([i (in-range n-args)]
+        [iv (in-vector rect)])
+    (for ([j (in-range 2)])
+      (define endpoint (if (zero? j) (ival-lo iv) (ival-hi iv)))
+      (define owner (store-rival-input! machine (+ (* 2 i) j) endpoint who))
+      (when owner (set! text-owners (cons owner text-owners)))))
+  (define results (call-with-values (lambda () (proc inputs n-args)) list))
+  ;; `inputs` contains raw C pointers, so the GC cannot find these owners by
+  ;; scanning the array. Keep them reachable until the FFI call has returned.
+  (void/reference-sink text-owners)
+  (apply values results))
 
 (define (analysis->ival analysis)
   (match analysis
@@ -578,29 +787,82 @@
     ['maybe_invalid (ival #f #t)]
     ['invalid (ival #t #t)]))
 
-(define (rival-analyze-with-hints machine rect [hints #f] #:partial? [partial? #f])
-  (define n-args (load-rect! 'rival-analyze-with-hints machine rect))
-  (check-hints! 'rival-analyze-with-hints machine hints)
+(define (finish-analysis-with-hints who machine rect hints partial? proc)
+  (check-hints! who machine hints)
   (define-values (status analysis converged hints-ptr)
-    (rival_machine_analyze machine
-                           (rival-machine-arg-buf machine)
-                           n-args
-                           hints
-                           (output-policy partial?)))
-  (check-ok! 'rival-analyze-with-hints status rect)
+    (proc))
+  (check-ok! who status rect)
   (define new-hints (rival-hints hints-ptr machine))
   (register-finalizer new-hints free-hints)
   (list (analysis->ival analysis) new-hints converged))
 
-(define (rival-analyze machine rect #:partial? [partial? #f])
-  (define n-args (load-rect! 'rival-analyze machine rect))
-  (define-values (status analysis)
-    (rival_machine_analyze/no-hints machine
-                                    (rival-machine-arg-buf machine)
-                                    n-args
-                                    (output-policy partial?)))
-  (check-ok! 'rival-analyze status rect)
+(define (finish-analysis who rect proc)
+  (define-values (status analysis _ hints-ptr)
+    (proc))
+  (check-ok! who status rect)
+  ;; The native API uses the same entry point for both calls; no-hints
+  ;; callers discard the returned hints immediately.
+  (when hints-ptr (rival_hints_free hints-ptr))
   (analysis->ival analysis))
+
+;;;;;;;;;;;;;;;;;;;;;; GENERAL ;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; Typed Rival endpoints (text, f64, booleans, integers, or MPFR).
+(define (rival-analyze-with-hints machine rect [hints #f] #:partial? [partial? #f])
+  (finish-analysis-with-hints
+   'rival-analyze-with-hints machine rect hints partial?
+   (lambda ()
+     (call-with-rival-rect
+      'rival-analyze-with-hints machine rect
+      (lambda (bounds n-args)
+        (rival_machine_analyze machine bounds n-args hints (output-policy partial?)))))))
+
+(define (rival-analyze machine rect #:partial? [partial? #f])
+  (finish-analysis
+   'rival-analyze rect
+   (lambda ()
+     (call-with-rival-rect
+      'rival-analyze machine rect
+      (lambda (bounds n-args)
+        (rival_machine_analyze machine bounds n-args #f (output-policy partial?)))))))
+
+;;;;;;;;;;;;;;;;;;;;;; MPFR ;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define (rival-analyze-with-hints/mpfr machine rect [hints #f] #:partial? [partial? #f])
+  (define n-args (load-rect/mpfr! 'rival-analyze-with-hints/mpfr machine rect))
+  (finish-analysis-with-hints
+   'rival-analyze-with-hints/mpfr machine rect hints partial?
+   (lambda ()
+     (rival_machine_analyze_mpfr machine (rival-machine-mpfr-arg-buf machine) n-args hints
+                                 (output-policy partial?)))))
+
+(define (rival-analyze/mpfr machine rect #:partial? [partial? #f])
+  (define n-args (load-rect/mpfr! 'rival-analyze/mpfr machine rect))
+  (finish-analysis
+   'rival-analyze/mpfr rect
+   (lambda ()
+     (rival_machine_analyze_mpfr machine (rival-machine-mpfr-arg-buf machine) n-args #f
+                                 (output-policy partial?)))))
+
+;;;;;;;;;;;;;;;;;;;;;; F64 ;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define (rival-analyze-with-hints/f64 machine rect [hints #f] #:partial? [partial? #f])
+  (define n-args (load-rect/f64! 'rival-analyze-with-hints/f64 machine rect))
+  (finish-analysis-with-hints
+   'rival-analyze-with-hints/f64 machine rect hints partial?
+   (lambda ()
+     (rival_machine_analyze_f64 machine (rival-machine-f64-arg-buf machine) n-args hints
+                                (output-policy partial?)))))
+
+(define (rival-analyze/f64 machine rect #:partial? [partial? #f])
+  (define n-args (load-rect/f64! 'rival-analyze/f64 machine rect))
+  (finish-analysis
+   'rival-analyze/f64 rect
+   (lambda ()
+     (rival_machine_analyze_f64 machine (rival-machine-f64-arg-buf machine) n-args #f
+                                (output-policy partial?)))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define (rival-profile machine param)
   (match param
