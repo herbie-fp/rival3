@@ -97,11 +97,15 @@
   (define (text-input text)
     (define ptr (text->c-string text who))
     (tag 0 _pointer ptr ptr))
+  (define (bool-input value)
+    (define storage (malloc _rival-input-value 'atomic-interior))
+    (memset storage 0 (ctype-sizeof _rival-input-value))
+    (define union-value (ptr-ref storage _rival-input-value))
+    (union-set! union-value 2 value)
+    (values (make-rival-input 2 union-value) storage))
   (cond
     ; Bool
-    ;; `_rival-input-value` is pointer-sized. Store the bool in an integer
-    ;; member so Racket can cast it into the union; C reads its low byte.
-    [(boolean? value) (tag 2 _uint64 (if value 1 0) #f)]
+    [(boolean? value) (bool-input value)]
     ; MPFR
     [(bigfloat? value) (tag 5 _mpfr-pointer value #f)]
     ; Integers that fit native tags avoid string conversion and parsing.
