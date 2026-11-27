@@ -23,7 +23,7 @@ macro_rules! impl_numeric_input {
     ($($ty:ty),+ $(,)?) => {$(
         impl IntoIval for $ty {
             fn into_ival(self, precision: u32) -> Result<Ival, ParseIvalError> {
-                Ok(enclose(precision, &self))
+                (&self).into_ival(precision)
             }
         }
 
@@ -48,13 +48,13 @@ impl IntoIval for &str {
 
 impl IntoIval for String {
     fn into_ival(self, precision: u32) -> Result<Ival, ParseIvalError> {
-        parse(precision, &self)
+        self.as_str().into_ival(precision)
     }
 }
 
 impl IntoIval for &String {
     fn into_ival(self, precision: u32) -> Result<Ival, ParseIvalError> {
-        parse(precision, self)
+        self.as_str().into_ival(precision)
     }
 }
 
@@ -102,11 +102,11 @@ impl Ival {
     }
 }
 
-fn enclose<T: Clone>(precision: u32, value: T) -> Ival
+fn enclose<'a, T>(precision: u32, value: &'a T) -> Ival
 where
-    Float: AssignRound<T, Round = Round, Ordering = Ordering>,
+    Float: AssignRound<&'a T, Round = Round, Ordering = Ordering>,
 {
-    let lo = Float::with_val_round(precision, value.clone(), Round::Down);
+    let lo = Float::with_val_round(precision, value, Round::Down);
     let hi = Float::with_val_round(precision, value, Round::Up);
     Ival::from_rounded(lo, hi)
 }
@@ -119,10 +119,14 @@ fn parse(precision: u32, text: &str) -> Result<Ival, ParseIvalError> {
         _ => {}
     }
     if let Some((numerator, denominator)) = text.split_once('/') {
-        let numerator =
-            Integer::from(Integer::parse(numerator.trim()).map_err(|_| ParseIvalError)?);
-        let denominator =
-            Integer::from(Integer::parse(denominator.trim()).map_err(|_| ParseIvalError)?);
+        let numerator = numerator
+            .trim()
+            .parse::<Integer>()
+            .map_err(|_| ParseIvalError)?;
+        let denominator = denominator
+            .trim()
+            .parse::<Integer>()
+            .map_err(|_| ParseIvalError)?;
         if denominator == 0 {
             return Err(ParseIvalError);
         }
@@ -142,4 +146,3 @@ fn parse(precision: u32, text: &str) -> Result<Ival, ParseIvalError> {
     );
     Ok(Ival::from_rounded(lo, hi))
 }
-

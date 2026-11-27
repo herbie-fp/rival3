@@ -262,18 +262,6 @@ impl<D: Discretization> MachineBuilder<D> {
 }
 
 impl<D: Discretization> Machine<D> {
-    /// Return the instruction index that writes to the given register when applicable.
-    #[inline]
-    pub(crate) fn register_to_instruction(&self, register: usize) -> Option<usize> {
-        (register < self.instructions.len()).then_some(register)
-    }
-
-    /// Return the register index corresponding to an instruction index.
-    #[inline]
-    pub(crate) fn instruction_register(&self, index: usize) -> usize {
-        index
-    }
-
     /// Return the total number of instructions in the compiled machine.
     #[inline]
     pub fn instruction_count(&self) -> usize {
@@ -302,12 +290,6 @@ impl<D: Discretization> Machine<D> {
     #[inline]
     pub fn max_precision(&self) -> u32 {
         self.max_precision
-    }
-
-    /// Return the precision used for input arguments.
-    #[inline]
-    pub fn argument_precision(&self) -> u32 {
-        self.disc.target().max(self.min_precision)
     }
 
     /// Return the discretization that outputs are rounded to.

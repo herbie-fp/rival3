@@ -30,8 +30,8 @@ impl<D: Discretization> Machine<D> {
     /// Input conversion instructions call [`Ival::with_val`] at the precision
     /// requested by the evaluation strategy, retaining original values for
     /// refinement. [`Input::from`] accepts strings, booleans, primitive numbers,
-    /// Rug numeric types, and existing intervals. Inputs may change type between
-    /// calls. All declared arguments must be supplied, including unused ones.
+    /// and Rug numeric types. Inputs may change type between calls. All declared
+    /// arguments must be supplied, including unused ones.
     ///
     /// `args` must be the same length as the `vars` passed to
     /// [`MachineBuilder::build`](super::machine::MachineBuilder::build). The output is a vector of output
@@ -174,16 +174,7 @@ impl<D: Discretization> Machine<D> {
                 expected: "box",
             });
         }
-        self.analyze_runtime_inputs_with_hints(rect, hint, policy)
-    }
-
-    fn analyze_runtime_inputs_with_hints(
-        &mut self,
-        inputs: &[Input],
-        hint: Option<&[Hint]>,
-        policy: OutputPolicy,
-    ) -> Result<(Ival, Vec<Hint>, bool), RivalError> {
-        self.reset_evaluation(inputs.len());
+        self.reset_evaluation(rect.len());
 
         // Use provided hint or default.
         let tmp;
@@ -202,7 +193,7 @@ impl<D: Discretization> Machine<D> {
             }
             Strategy::Baseline => self.baseline_adjust(self.disc.target().saturating_add(10)),
         }
-        self.run_with_hint(inputs, hint_slice)?;
+        self.run_with_hint(rect, hint_slice)?;
 
         let (good, _done, bad, stuck) = self.return_flags(policy);
         let (next_hint, converged) = self.make_hint(hint_slice);
@@ -249,7 +240,7 @@ impl<D: Discretization> Machine<D> {
             if repeat {
                 continue;
             }
-            let out_reg = self.instruction_register(idx);
+            let out_reg = idx;
 
             // Hints can override execution.
             match hint {
@@ -321,16 +312,14 @@ impl<D: Discretization> Machine<D> {
             // Determine which instructions can affect outputs (must be executed).
             let mut useful = vec![false; instruction_count];
             for &root in &self.outputs {
-                if let Some(idx) = self.register_to_instruction(root) {
-                    useful[idx] = true;
-                }
+                useful[root] = true;
             }
 
             for idx in (0..instruction_count).rev() {
                 if !useful[idx] {
                     continue;
                 }
-                let out_reg = self.instruction_register(idx);
+                let out_reg = idx;
                 let reg = &self.registers[out_reg];
                 if reg.lo.immovable && reg.hi.immovable {
                     useful[idx] = false;
