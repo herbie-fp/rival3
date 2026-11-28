@@ -15,6 +15,7 @@ pub struct RivalMachineOptions {
     max_precision: Option<u32>,
     profile_capacity: Option<usize>,
     strategy: Option<Strategy>,
+    early_exit: bool,
 }
 
 impl Default for RivalMachineOptions {
@@ -24,6 +25,7 @@ impl Default for RivalMachineOptions {
             max_precision: None,
             profile_capacity: None,
             strategy: None,
+            early_exit: false,
         }
     }
 }
@@ -46,8 +48,22 @@ impl RivalMachineOptions {
         if let Some(profile_capacity) = self.profile_capacity {
             builder = builder.profile_capacity(profile_capacity);
         }
-        builder
+        builder.early_exit(self.early_exit)
     }
+}
+
+/// Enable the adaptive upper-bound precision-cap early exit at compilation.
+/// Disabled by default; baseline evaluation ignores this option.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rival_machine_options_set_early_exit(
+    options: *mut RivalMachineOptions,
+    enabled: bool,
+) -> RivalError {
+    status(|| {
+        let options = unsafe { options.as_mut() }.ok_or(RivalError::Misuse)?;
+        options.early_exit = enabled;
+        Ok(())
+    })
 }
 
 fn checked_precision(precision: u32) -> Result<u32, RivalError> {

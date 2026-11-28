@@ -294,11 +294,13 @@ size_t rival_machine_var_count(const RivalMachine *machine);
 
 size_t rival_machine_expr_count(const RivalMachine *machine);
 
+/**
+ * Apply MPFR point inputs. Adaptive evaluation stops when refinement cannot progress.
+ */
 RivalError rival_machine_apply_mpfr_to_mpfr(RivalMachine *machine,
                                             const mpfr_srcptr *args,
                                             size_t n_args,
                                             const RivalHints *hints,
-                                            uint32_t max_iterations,
                                             RivalOutputPolicy policy,
                                             mpfr_srcptr *out,
                                             size_t n_out);
@@ -311,7 +313,6 @@ RivalError rival_machine_apply_any_to_mpfr(RivalMachine *machine,
                                            const RivalInput *args,
                                            size_t n_args,
                                            const RivalHints *hints,
-                                           uint32_t max_iterations,
                                            RivalOutputPolicy policy,
                                            mpfr_srcptr *out,
                                            size_t n_out);
@@ -324,16 +325,17 @@ RivalError rival_machine_apply_f64_to_mpfr(RivalMachine *machine,
                                            const double *args,
                                            size_t n_args,
                                            const RivalHints *hints,
-                                           uint32_t max_iterations,
                                            RivalOutputPolicy policy,
                                            mpfr_srcptr *out,
                                            size_t n_out);
 
+/**
+ * Apply binary64 point inputs.
+ */
 RivalError rival_machine_apply_f64_to_f64(RivalMachine *machine,
                                           const double *args,
                                           size_t n_args,
                                           const RivalHints *hints,
-                                          uint32_t max_iterations,
                                           RivalOutputPolicy policy,
                                           double *out,
                                           size_t n_out);
@@ -369,6 +371,12 @@ RivalError rival_machine_analyze_f64(RivalMachine *machine,
                                      RivalAnalysis *out_analysis,
                                      bool *out_converged,
                                      RivalHints **out_hints);
+
+/**
+ * Enable the adaptive upper-bound precision-cap early exit at compilation.
+ * Disabled by default; baseline evaluation ignores this option.
+ */
+RivalError rival_machine_options_set_early_exit(RivalMachineOptions *options, bool enabled);
 
 RivalError rival_machine_options_new(RivalMachineOptions **out);
 

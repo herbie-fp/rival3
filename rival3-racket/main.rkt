@@ -21,7 +21,7 @@
          rival-analyze/f64)             ; <f64, f64>*       -> <ival[bool]>+
 
 (provide (contract-out [rival-compile compile/c]
-                       [baseline-compile compile/c]
+                       [baseline-compile baseline-compile/c]
                        [rival-profile (c:-> rival-machine? profile-key/c any)]
                        [rival-set-profiling! (c:-> rival-machine? any/c void?)]
                        [rival-profiling-enabled? (c:-> rival-machine? boolean?)])
@@ -36,7 +36,6 @@
          (struct-out discretization)
          (struct-out ival)
          *rival-max-precision*
-         *rival-max-iterations*
          *rival-profile-executions*
          (all-from-out "ops.rkt"))
 
@@ -151,7 +150,6 @@
                       (bigfloat->flonum value)))))
 
 (define *rival-max-precision* (make-parameter 10000))
-(define *rival-max-iterations* (make-parameter 5))
 (define *rival-profile-executions* (make-parameter 1000))
 
 (define-runtime-path native-root (build-path "private" "native"))
@@ -290,6 +288,7 @@
 (define-rival rival_machine_options_set_max_precision (_fun _pointer _uint32 -> _rival-error))
 (define-rival rival_machine_options_set_profile_capacity (_fun _pointer _size -> _rival-error))
 (define-rival rival_machine_options_set_strategy (_fun _pointer _rival-strategy -> _rival-error))
+(define-rival rival_machine_options_set_early_exit (_fun _pointer _stdbool -> _rival-error))
 
 (define-rival rival_machine_new
               (_fun _pointer
@@ -310,7 +309,7 @@
 (define-rival rival_machine_get_profiling (_fun _pointer -> _stdbool))
 
 (define _apply-fun
-  (_fun _pointer _pointer _size _pointer _uint32 _rival-output-policy _pointer _size -> _rival-error))
+  (_fun _pointer _pointer _size _pointer _rival-output-policy _pointer _size -> _rival-error))
 (define-rival rival_machine_apply_any_to_mpfr _apply-fun)
 (define-rival rival_machine_apply_mpfr_to_mpfr _apply-fun)
 (define-rival rival_machine_apply_f64_to_mpfr _apply-fun)
@@ -388,6 +387,14 @@
                          (exprs)
                          (and/c (listof discretization/c)
                                 (lambda (discs) (= (length discs) (length exprs))))])
+         (#:early-exit? [early-exit? boolean?])
+         [machine rival-machine?]))
+
+(define baseline-compile/c
+  (c:->i ([exprs list?] [vars (listof symbol?)]
+         [discs (exprs)
+                (and/c (listof discretization/c)
+                       (lambda (discs) (= (length discs) (length exprs))))])
          [machine rival-machine?]))
 
 (define profile-key/c (or/c 'instructions 'iterations 'bumps 'executions))
@@ -476,13 +483,13 @@
                               discs))
      target]))
 
-(define (rival-compile exprs vars discs)
-  (compile-inner exprs vars discs 'adaptive 'rival-compile))
+(define (rival-compile exprs vars discs #:early-exit? [early-exit? #f])
+  (compile-inner exprs vars discs 'adaptive early-exit? 'rival-compile))
 
 (define (baseline-compile exprs vars discs)
-  (compile-inner exprs vars discs 'baseline 'baseline-compile))
+  (compile-inner exprs vars discs 'baseline #f 'baseline-compile))
 
-(define (make-machine-options who target max-precision profile-capacity strategy)
+(define (make-machine-options who target max-precision profile-capacity strategy early-exit?)
   (define-values (status options) (rival_machine_options_new))
   (unless (eq? status 'ok)
     (raise-arguments-error who "Rival could not allocate machine options"))
@@ -494,16 +501,17 @@
   (set-option! rival_machine_options_set_max_precision "max precision" max-precision)
   (set-option! rival_machine_options_set_profile_capacity "profile capacity" profile-capacity)
   (set-option! rival_machine_options_set_strategy "strategy" strategy)
+  (set-option! rival_machine_options_set_early_exit "early exit" early-exit?)
   options)
 
-(define (compile-inner exprs vars discs strategy who)
+(define (compile-inner exprs vars discs strategy early-exit? who)
   (define n-vars (length vars))
   (define n-exprs (length exprs))
   (define target (discs-target discs who))
   (define max-precision (*rival-max-precision*))
   (define profile-capacity (*rival-profile-executions*))
 
-  (define options (make-machine-options who target max-precision profile-capacity strategy))
+  (define options (make-machine-options who target max-precision profile-capacity strategy early-exit?))
   (define-values (builder-status builder) (rival_expr_builder_new (map symbol->string vars)))
   (unless (eq? builder-status 'ok)
     (rival_machine_options_free options)
@@ -653,7 +661,6 @@
                          inputs
                          n-args
                          hints
-                         (*rival-max-iterations*)
                          (output-policy partial?)
                          (rival-machine-out-buf machine)
                          n-outs)
@@ -679,7 +686,6 @@
                                               args
                                               n-args
                                               hints
-                                              (*rival-max-iterations*)
                                               (output-policy partial?)
                                               (rival-machine-out-buf machine)
                                               n-outs)
@@ -704,7 +710,6 @@
                                             args
                                             n-args
                                             hints
-                                            (*rival-max-iterations*)
                                             (output-policy partial?)
                                             outs
                                             n-outs)

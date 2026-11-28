@@ -26,72 +26,40 @@ pub fn slack_bits(iteration: usize, slack_unit: i64) -> u32 {
     clamp_to_bits(get_slack(iteration, slack_unit))
 }
 
-/// Bounds on how many bits of precision are needed for a child instruction based on amplification analysis
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct AmplBounds {
-    pub upper: i64,
-    pub lower: i64,
-}
-
-impl AmplBounds {
-    /// Create a bounds value with explicit upper and lower growth
-    pub const fn new(upper: i64, lower: i64) -> Self {
-        Self { upper, lower }
-    }
-
-    /// Create a bounds value indicating no required amplification
-    pub const fn zero() -> Self {
-        Self::new(0, 0)
-    }
-}
-
-impl Default for AmplBounds {
-    fn default() -> Self {
-        AmplBounds::zero()
-    }
-}
-
 #[derive(Clone, Copy, Debug)]
 pub struct TrickContext {
     pub iteration: usize,
-    pub lower_bound_early_stopping: bool,
     pub bumps_enabled: bool,
     pub slack_unit: i64,
 }
 
 impl TrickContext {
     /// Create a context capturing tuning settings for one iteration
-    pub fn new(
-        iteration: usize,
-        lower_bound_early_stopping: bool,
-        bumps_enabled: bool,
-        slack_unit: i64,
-    ) -> Self {
+    pub fn new(iteration: usize, bumps_enabled: bool, slack_unit: i64) -> Self {
         Self {
             iteration,
-            lower_bound_early_stopping,
             bumps_enabled,
             slack_unit,
         }
     }
 
-    /// Look up unary amplification bounds via the operation registry
-    pub fn bounds_for_unary(&self, op: UnaryOp, output: &Ival, input: &Ival) -> AmplBounds {
+    /// Look up unary amplification upper bounds via the operation registry
+    pub fn bounds_for_unary(&self, op: UnaryOp, output: &Ival, input: &Ival) -> i64 {
         ops::bounds_for_unary(self, op, output, input)
     }
 
-    /// Look up binary amplification bounds via the operation registry
+    /// Look up binary amplification upper bounds via the operation registry
     pub fn bounds_for_binary(
         &self,
         op: BinaryOp,
         output: &Ival,
         lhs: &Ival,
         rhs: &Ival,
-    ) -> (AmplBounds, AmplBounds) {
+    ) -> (i64, i64) {
         ops::bounds_for_binary(self, op, output, lhs, rhs)
     }
 
-    /// Look up ternary amplification bounds via the operation registry
+    /// Look up ternary amplification upper bounds via the operation registry
     pub fn bounds_for_ternary(
         &self,
         op: TernaryOp,
@@ -99,18 +67,18 @@ impl TrickContext {
         arg1: &Ival,
         arg2: &Ival,
         arg3: &Ival,
-    ) -> (AmplBounds, AmplBounds, AmplBounds) {
+    ) -> (i64, i64, i64) {
         ops::bounds_for_ternary(self, op, output, arg1, arg2, arg3)
     }
 
-    /// Look up unary parameterized amplification bounds via the operation registry
+    /// Look up unary parameterized amplification upper bounds via the operation registry
     pub fn bounds_for_unary_param(
         &self,
         op: UnaryParamOp,
         param: u64,
         output: &Ival,
         input: &Ival,
-    ) -> AmplBounds {
+    ) -> i64 {
         ops::bounds_for_unary_param(self, op, param, output, input)
     }
 
@@ -119,20 +87,13 @@ impl TrickContext {
         if !self.bumps_enabled {
             return 0;
         }
-        let lo = value.lo.as_float();
-        let hi = value.hi.as_float();
-        if lo.is_zero() || hi.is_zero() || lo.is_infinite() || hi.is_infinite() {
-            return get_slack(self.iteration, self.slack_unit);
-        }
-        let lo_exp = exponent(lo);
-        let hi_exp = exponent(hi);
-        (lo_exp - hi_exp).abs() + 1
+        self.maxlog(value).saturating_sub(self.minlog(value))
     }
 
-    /// Compute an upper exponent bound with optional slack reduction
-    pub fn maxlog(&self, value: &Ival, less_slack: bool) -> i64 {
+    /// Compute an upper exponent bound
+    pub fn maxlog(&self, value: &Ival) -> i64 {
         let (lo, hi) = (value.lo.as_float(), value.hi.as_float());
-        let slack = get_slack(self.iter_for(less_slack), self.slack_unit);
+        let slack = get_slack(self.iteration, self.slack_unit);
         let (lo_inf, hi_inf) = (lo.is_infinite(), hi.is_infinite());
         if lo_inf && hi_inf {
             slack
@@ -145,10 +106,10 @@ impl TrickContext {
         }
     }
 
-    /// Compute a lower exponent bound with optional slack reduction
-    pub fn minlog(&self, value: &Ival, less_slack: bool) -> i64 {
+    /// Compute a lower exponent bound
+    pub fn minlog(&self, value: &Ival) -> i64 {
         let (lo, hi) = (value.lo.as_float(), value.hi.as_float());
-        let slack = get_slack(self.iter_for(less_slack), self.slack_unit);
+        let slack = get_slack(self.iteration, self.slack_unit);
         let (lo_zero, hi_zero) = (lo.is_zero(), hi.is_zero());
         let (lo_inf, hi_inf) = (lo.is_infinite(), hi.is_infinite());
         if lo_zero && hi_zero {
@@ -181,14 +142,6 @@ impl TrickContext {
             exponent(lo)
         } else {
             exponent(lo).min(exponent(hi))
-        }
-    }
-
-    fn iter_for(&self, less_slack: bool) -> usize {
-        if less_slack {
-            self.iteration.saturating_sub(1)
-        } else {
-            self.iteration
         }
     }
 }

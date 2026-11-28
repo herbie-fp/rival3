@@ -21,7 +21,7 @@ The currently-supported command symbols and their return values are:
 
 @itemlist[
 @item{@code{instructions} returns the number of register machine instructions in the compiled @racket[machine].}
-@item{@code{iterations} returns the number of re-evaluation iterations needed for the most recent call to @racket[rival-apply] with the compiled @racket[machine]. This should be a number from 0 to @racket[*rival-max-iterations*], inclusive.}
+@item{@code{iterations} returns the zero-based iteration index for the most recent call to @racket[rival-apply] with the compiled @racket[machine]. Evaluation has no configured iteration limit.}
 @item{@code{bumps} returns the number of unexpected non-convergences detected during the most recent call to @racket[rival-apply] with the compiled @racket[machine]. These generally represent internal errors in Rival. While Rival will attempt to handle these "bumps" smoothly, they should still be reported to the developers as a bug.}
 @item{@code{executions} returns a list of values from which you can obtain execution metadata using the accessor functions @racket[execution-name], @racket[execution-number], @racket[execution-precision], @racket[execution-time], @racket[execution-memory], and @racket[execution-iteration]. These executions are stored in a fixed-size buffer (see @racket[*rival-profile-executions*]) that holds the executions of the most recent call to @racket[rival-apply] or @racket[rival-analyze]. If the list of @racket{execution}s returned by @racket[rival-profile] is equal in length to @racket[*rival-profile-executions*], you likely filled the buffer and are missing some executions.}
 ]

@@ -42,10 +42,13 @@ impl<D: Discretization> Machine<D> {
     /// [`Machine::analyze_with_hints`] to speed up evaluation.
     /// Pass `None` for default behavior.
     ///
-    /// `max_iterations` sets the maximum number of re-evaluation
-    /// iterations before giving up. A [`Strategy::Baseline`] machine
-    /// ignores it and gives up once the precision would exceed
-    /// [`Machine::max_precision`].
+    /// Adaptive evaluation has no iteration limit. If tuning stalls, it retries
+    /// with logspan enabled and gives up if no further precision increase is
+    /// possible. Working precisions are capped by [`Machine::max_precision`].
+    /// Opting into [`MachineBuilder::early_exit`](super::machine::MachineBuilder::early_exit)
+    /// instead stops as soon as an adaptive tuning target reaches that cap.
+    /// A [`Strategy::Baseline`] machine gives up when doubling its precision
+    /// would exceed that cap.
     ///
     /// # Errors
     ///
@@ -63,7 +66,6 @@ impl<D: Discretization> Machine<D> {
         &mut self,
         args: &[Input],
         hint: Option<&[Hint]>,
-        max_iterations: usize,
         policy: OutputPolicy,
     ) -> Result<Vec<Ival>, RivalError> {
         assert_eq!(args.len(), self.arguments.len(), "Argument count mismatch");
@@ -83,7 +85,7 @@ impl<D: Discretization> Machine<D> {
         };
 
         match self.strategy {
-            Strategy::Adaptive => self.apply_adaptive(args, hint_slice, max_iterations, policy),
+            Strategy::Adaptive => self.apply_adaptive(args, hint_slice, policy),
             Strategy::Baseline => self.apply_baseline(args, hint_slice, policy),
         }
     }
@@ -92,16 +94,15 @@ impl<D: Discretization> Machine<D> {
         &mut self,
         args: &[Input],
         hints: &[Hint],
-        max_iterations: usize,
         policy: OutputPolicy,
     ) -> Result<Vec<Ival>, RivalError> {
-        for iteration in 0..max_iterations {
+        let mut iteration: usize = 0;
+        loop {
             if let Some(results) = self.run_iteration(args, iteration, hints, policy)? {
                 return Ok(results);
             }
+            iteration = iteration.saturating_add(1);
         }
-
-        Err(RivalError::Unsamplable)
     }
 
     fn apply_baseline(
@@ -462,7 +463,8 @@ pub enum RivalError {
     #[error("Invalid input for rival machine")]
     InvalidInput,
     /// Rival was unable to correctly round the output within the
-    /// configured precision and iteration limits.
+    /// configured precision cap, either because refinement could make no
+    /// further progress or because the optional precision-cap early exit fired.
     #[error("Unsamplable input for rival machine")]
     Unsamplable,
 }

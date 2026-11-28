@@ -80,7 +80,7 @@ fn backward_pass<D: Discretization>(machine: &mut Machine<D>, hints: &[Hint]) ->
     };
     let first_tuning_pass = machine.iteration == 1;
 
-    let mut vprecs_max = vec![0u32; instruction_count];
+    let mut vprecs = vec![0u32; instruction_count];
     let mut work_repeats = vec![true; instruction_count];
 
     // Step 1: Add slack bits to outputs that hit discretization boundaries.
@@ -88,7 +88,7 @@ fn backward_pass<D: Discretization>(machine: &mut Machine<D>, hints: &[Hint]) ->
     let slack = slack_bits(machine.iteration, machine.slack_unit);
     for (&root, &boundary_issue) in machine.outputs.iter().zip(machine.output_distance.iter()) {
         if boundary_issue {
-            vprecs_max[root] = vprecs_max[root].max(slack);
+            vprecs[root] = vprecs[root].max(slack);
         }
     }
 
@@ -117,20 +117,13 @@ fn backward_pass<D: Discretization>(machine: &mut Machine<D>, hints: &[Hint]) ->
     }
 
     // Step 2: Precision tuning.
-    let mut vprecs_min = vec![0u32; instruction_count];
-    if precision_tuning(
-        machine,
-        hints,
-        &work_repeats,
-        &mut vprecs_max,
-        &mut vprecs_min,
-    ) {
+    if precision_tuning(machine, hints, &work_repeats, &mut vprecs) {
         return true;
     }
 
     // Step 3: Update repeats based on new precisions.
     let mut any_reevaluation =
-        update_repeats(machine, &mut work_repeats, &vprecs_max, first_tuning_pass);
+        update_repeats(machine, &mut work_repeats, &vprecs, first_tuning_pass);
 
     // Step 4: If no precision increase, try logspan bumps.
     if !any_reevaluation {
@@ -138,27 +131,21 @@ fn backward_pass<D: Discretization>(machine: &mut Machine<D>, hints: &[Hint]) ->
         machine.bumps = machine.bumps.saturating_add(1);
         machine.bumps_activated = true;
         // Reset and recalculate precisions for bumps mode.
-        vprecs_max.fill(0);
+        vprecs.fill(0);
         work_repeats.fill(false);
-        if precision_tuning(
-            machine,
-            hints,
-            &work_repeats,
-            &mut vprecs_max,
-            &mut vprecs_min,
-        ) {
+        if precision_tuning(machine, hints, &work_repeats, &mut vprecs) {
             return true;
         }
         any_reevaluation =
-            update_repeats(machine, &mut work_repeats, &vprecs_max, first_tuning_pass);
+            update_repeats(machine, &mut work_repeats, &vprecs, first_tuning_pass);
         if !any_reevaluation {
-            work_repeats.fill(true);
+            return true;
         }
     }
 
     // Step 5: Update machine state.
     machine.repeats.copy_from_slice(&work_repeats);
-    machine.precisions.copy_from_slice(&vprecs_max);
+    machine.precisions.copy_from_slice(&vprecs);
 
     if profiling && let Some(t0) = start_time {
         let dt_ms = t0.elapsed().as_secs_f64() * 1000.0;

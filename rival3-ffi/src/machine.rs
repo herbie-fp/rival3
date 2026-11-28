@@ -258,13 +258,13 @@ pub unsafe extern "C" fn rival_machine_expr_count(machine: *const RivalMachine) 
     unsafe { machine.as_ref() }.map_or(0, |machine| machine.n_exprs)
 }
 
+/// Apply MPFR point inputs. Adaptive evaluation stops when refinement cannot progress.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rival_machine_apply_mpfr_to_mpfr(
     machine: *mut RivalMachine,
     args: *const mpfr_srcptr,
     n_args: usize,
     hints: *const RivalHints,
-    max_iterations: u32,
     policy: OutputPolicyCode,
     out: *mut mpfr_srcptr,
     n_out: usize,
@@ -285,7 +285,7 @@ pub unsafe extern "C" fn rival_machine_apply_mpfr_to_mpfr(
             .collect::<Result<_, _>>()?;
         let outputs = machine
             .machine
-            .apply(&inputs, hints, max_iterations as usize, policy)?;
+            .apply(&inputs, hints, policy)?;
         write_outputs(machine, &outputs, out);
         Ok(())
     })
@@ -299,7 +299,6 @@ pub unsafe extern "C" fn rival_machine_apply_any_to_mpfr(
     args: *const RivalInput,
     n_args: usize,
     hints: *const RivalHints,
-    max_iterations: u32,
     policy: OutputPolicyCode,
     out: *mut mpfr_srcptr,
     n_out: usize,
@@ -320,7 +319,7 @@ pub unsafe extern "C" fn rival_machine_apply_any_to_mpfr(
             .collect::<Result<Vec<_>, _>>()?;
         let outputs = machine
             .machine
-            .apply(&inputs, hints, max_iterations as usize, policy)?;
+            .apply(&inputs, hints, policy)?;
         write_outputs(machine, &outputs, out);
         Ok(())
     })
@@ -334,7 +333,6 @@ pub unsafe extern "C" fn rival_machine_apply_f64_to_mpfr(
     args: *const f64,
     n_args: usize,
     hints: *const RivalHints,
-    max_iterations: u32,
     policy: OutputPolicyCode,
     out: *mut mpfr_srcptr,
     n_out: usize,
@@ -352,19 +350,19 @@ pub unsafe extern "C" fn rival_machine_apply_f64_to_mpfr(
         let inputs: Vec<Input> = args.iter().copied().map(Input::from).collect();
         let outputs = machine
             .machine
-            .apply(&inputs, hints, max_iterations as usize, policy)?;
+            .apply(&inputs, hints, policy)?;
         write_outputs(machine, &outputs, out);
         Ok(())
     })
 }
 
+/// Apply binary64 point inputs.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rival_machine_apply_f64_to_f64(
     machine: *mut RivalMachine,
     args: *const f64,
     n_args: usize,
     hints: *const RivalHints,
-    max_iterations: u32,
     policy: OutputPolicyCode,
     out: *mut f64,
     n_out: usize,
@@ -382,7 +380,7 @@ pub unsafe extern "C" fn rival_machine_apply_f64_to_f64(
         let inputs: Vec<Input> = args.iter().copied().map(Input::from).collect();
         let outputs = machine
             .machine
-            .apply(&inputs, hints, max_iterations as usize, policy)?;
+            .apply(&inputs, hints, policy)?;
         write_f64_outputs(&outputs, machine.machine.discretization(), out);
         Ok(())
     })

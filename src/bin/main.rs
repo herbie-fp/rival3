@@ -358,10 +358,10 @@ fn main() {
     let inputs: Vec<Input> = values.into_iter().map(Input::from).collect();
 
     // Warm-up run just like the racket repl.
-    let _ = machine.apply(&inputs, None, 5, OutputPolicy::AllowPartial);
+    let _ = machine.apply(&inputs, None, OutputPolicy::AllowPartial);
 
     let start = Instant::now();
-    let result = machine.apply(&inputs, None, 10, OutputPolicy::AllowPartial);
+    let result = machine.apply(&inputs, None, OutputPolicy::AllowPartial);
     let total_time = start.elapsed().as_secs_f64() * 1000.0;
 
     let execs: Vec<Execution> = machine.execution_records().to_vec();

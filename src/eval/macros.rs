@@ -113,11 +113,11 @@ macro_rules! def_ops {
             op: UnaryOp,
             output: &Ival,
             input: &Ival,
-        ) -> AmplBounds {
+        ) -> i64 {
             match op {
                 $(
                     UnaryOp::$unary_name => {
-                        let bounds_fn: fn(&TrickContext, &Ival, &Ival) -> AmplBounds = $unary_bounds;
+                        let bounds_fn: fn(&TrickContext, &Ival, &Ival) -> i64 = $unary_bounds;
                         bounds_fn(ctx, output, input)
                     }
                 )*
@@ -131,11 +131,11 @@ macro_rules! def_ops {
             output: &Ival,
             lhs: &Ival,
             rhs: &Ival,
-        ) -> (AmplBounds, AmplBounds) {
+        ) -> (i64, i64) {
             match op {
                 $(
                     BinaryOp::$binary_name => {
-                        let bounds_fn: fn(&TrickContext, &Ival, &Ival, &Ival) -> (AmplBounds, AmplBounds) = $binary_bounds;
+                        let bounds_fn: fn(&TrickContext, &Ival, &Ival, &Ival) -> (i64, i64) = $binary_bounds;
                         bounds_fn(ctx, output, lhs, rhs)
                     }
                 )*
@@ -150,11 +150,11 @@ macro_rules! def_ops {
             arg1: &Ival,
             arg2: &Ival,
             arg3: &Ival,
-        ) -> (AmplBounds, AmplBounds, AmplBounds) {
+        ) -> (i64, i64, i64) {
             match op {
                 $(
                     TernaryOp::$ternary_name => {
-                        let bounds_fn: fn(&TrickContext, &Ival, &Ival, &Ival, &Ival) -> (AmplBounds, AmplBounds, AmplBounds) = $ternary_bounds;
+                        let bounds_fn: fn(&TrickContext, &Ival, &Ival, &Ival, &Ival) -> (i64, i64, i64) = $ternary_bounds;
                         bounds_fn(ctx, output, arg1, arg2, arg3)
                     }
                 )*
@@ -168,11 +168,11 @@ macro_rules! def_ops {
             param: u64,
             output: &Ival,
             input: &Ival,
-        ) -> AmplBounds {
+        ) -> i64 {
             match op {
                 $(
                     UnaryParamOp::$unary_param_name => {
-                        let bounds_fn: fn(&TrickContext, u64, &Ival, &Ival) -> AmplBounds = $unary_param_bounds;
+                        let bounds_fn: fn(&TrickContext, u64, &Ival, &Ival) -> i64 = $unary_param_bounds;
                         bounds_fn(ctx, param, output, input)
                     }
                 )*

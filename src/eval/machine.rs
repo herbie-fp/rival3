@@ -71,9 +71,9 @@ pub struct Machine<D: Discretization> {
 
     // Configuration parameters.
     pub(crate) strategy: Strategy,
+    pub(crate) early_exit: bool,
     pub(crate) max_precision: u32,
     pub(crate) min_precision: u32,
-    pub(crate) lower_bound_early_stopping: bool,
     pub(crate) slack_unit: i64,
     pub(crate) bumps_activated: bool,
 }
@@ -117,6 +117,7 @@ pub(crate) struct PathOutcome {
 pub struct MachineBuilder<D: Discretization> {
     disc: D,
     strategy: Strategy,
+    early_exit: bool,
     min_precision: u32,
     max_precision: u32,
     slack_unit: i64,
@@ -131,6 +132,7 @@ impl<D: Discretization> MachineBuilder<D> {
     ///
     /// Defaults:
     /// - `strategy`: [`Strategy::Adaptive`]
+    /// - `early_exit`: disabled
     /// - `min_precision`: 20 bits
     /// - `max_precision`: 10,000 bits
     /// - `slack_unit`: 512
@@ -139,6 +141,7 @@ impl<D: Discretization> MachineBuilder<D> {
         Self {
             disc,
             strategy: Strategy::Adaptive,
+            early_exit: false,
             min_precision: 20,
             max_precision: 10_000,
             slack_unit: 512,
@@ -152,6 +155,14 @@ impl<D: Discretization> MachineBuilder<D> {
     /// Set the precision strategy.
     pub fn strategy(mut self, v: Strategy) -> Self {
         self.strategy = v;
+        self
+    }
+
+    /// Opt into stopping adaptive evaluation when a tuned upper-bound precision
+    /// reaches the maximum, before executing that plan. Disabled by default.
+    /// This can reject inputs that would succeed at the cap. Baseline ignores it.
+    pub fn early_exit(mut self, enabled: bool) -> Self {
+        self.early_exit = enabled;
         self
     }
 
@@ -252,9 +263,9 @@ impl<D: Discretization> MachineBuilder<D> {
             iteration: 0,
             bumps: 0,
             strategy: self.strategy,
+            early_exit: self.early_exit,
             max_precision: self.max_precision,
             min_precision: self.min_precision,
-            lower_bound_early_stopping: false,
             slack_unit: self.slack_unit,
             bumps_activated: false,
             profiler: Profiler::with_capacity(self.profile_capacity),
