@@ -63,6 +63,8 @@
 //! state-of-the-art implementation, competitive with Sollya/MPFI,
 //! Calcium/Arb, and Mathematica.
 
+#[cfg(feature = "arb")]
+mod arb;
 mod eval;
 mod interval;
 mod mpfr;

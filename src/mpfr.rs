@@ -1,13 +1,16 @@
 //! Wrappers around MPFR functions using the `rug` and `gmp_mpfr_sys` crates.
 //! Uses unsafe functions for ease of implementation, and in cases such as
 //! `exp_overflow_threshold`, for efficiency
+//!
+//! With the `arb` feature, transcendental functions first try Arb. This is
+//! faster and returns the same results.
 use std::ffi::c_ulong;
 
 use gmp_mpfr_sys::mpfr;
 use rug::Float;
 use rug::float::Round;
 
-fn to_mpfr_round(rnd: Round) -> mpfr::rnd_t {
+pub(crate) fn to_mpfr_round(rnd: Round) -> mpfr::rnd_t {
     match rnd {
         Round::Down => mpfr::rnd_t::RNDD,
         Round::Up => mpfr::rnd_t::RNDU,
@@ -18,21 +21,52 @@ fn to_mpfr_round(rnd: Round) -> mpfr::rnd_t {
 }
 
 macro_rules! mpfr_unary_op {
-    ($name:ident, $func:path) => {
+    ($name:ident, $func:path $(, $arb:ident)?) => {
         pub fn $name(input: &Float, out: &mut Float, rnd: Round) -> bool {
+            $(
+                #[cfg(feature = "arb")]
+                if let Some(exact) = crate::arb::unary(crate::arb::$arb, input, out, rnd) {
+                    return exact;
+                }
+            )?
             unsafe { $func(out.as_raw_mut(), input.as_raw(), to_mpfr_round(rnd)) == 0 }
         }
     };
 }
 
 macro_rules! mpfr_binary_op {
-    ($name:ident, $func:path) => {
+    ($name:ident, $func:path $(, $arb:ident)?) => {
         pub fn $name(lhs: &Float, rhs: &Float, out: &mut Float, rnd: Round) -> bool {
+            $(
+                #[cfg(feature = "arb")]
+                if let Some(exact) = crate::arb::binary(crate::arb::$arb, lhs, rhs, out, rnd) {
+                    return exact;
+                }
+            )?
             unsafe {
                 $func(
                     out.as_raw_mut(),
                     lhs.as_raw(),
                     rhs.as_raw(),
+                    to_mpfr_round(rnd),
+                ) == 0
+            }
+        }
+    };
+}
+
+macro_rules! mpfr_periodic_op {
+    ($name:ident, $func:path, $arb:ident) => {
+        pub fn $name(x: &Float, n: u64, out: &mut Float, rnd: Round) -> bool {
+            #[cfg(feature = "arb")]
+            if let Some(exact) = crate::arb::periodic(crate::arb::$arb, x, n, out, rnd) {
+                return exact;
+            }
+            unsafe {
+                $func(
+                    out.as_raw_mut(),
+                    x.as_raw(),
+                    n as c_ulong,
                     to_mpfr_round(rnd),
                 ) == 0
             }
@@ -52,38 +86,42 @@ mpfr_unary_op!(mpfr_cbrt, mpfr::cbrt);
 mpfr_unary_op!(mpfr_pow2, mpfr::sqr);
 
 // Exponential functions
-mpfr_unary_op!(mpfr_exp, mpfr::exp);
-mpfr_unary_op!(mpfr_exp2, mpfr::exp2);
+mpfr_unary_op!(mpfr_exp, mpfr::exp, arb_exp);
+mpfr_unary_op!(mpfr_exp2, mpfr::exp2, arb_exp2);
 mpfr_unary_op!(mpfr_expm1, mpfr::expm1);
 
 // Logarithmic functions
-mpfr_unary_op!(mpfr_log, mpfr::log);
-mpfr_unary_op!(mpfr_log2, mpfr::log2);
-mpfr_unary_op!(mpfr_log10, mpfr::log10);
-mpfr_unary_op!(mpfr_log1p, mpfr::log1p);
+mpfr_unary_op!(mpfr_log, mpfr::log, arb_log);
+mpfr_unary_op!(mpfr_log2, mpfr::log2, arb_log2);
+mpfr_unary_op!(mpfr_log10, mpfr::log10, arb_log10);
+mpfr_unary_op!(mpfr_log1p, mpfr::log1p, arb_log1p);
 
 // Trigonometric functions
-mpfr_unary_op!(mpfr_sin, mpfr::sin);
-mpfr_unary_op!(mpfr_cos, mpfr::cos);
-mpfr_unary_op!(mpfr_tan, mpfr::tan);
-mpfr_unary_op!(mpfr_asin, mpfr::asin);
-mpfr_unary_op!(mpfr_acos, mpfr::acos);
-mpfr_unary_op!(mpfr_atan, mpfr::atan);
+mpfr_unary_op!(mpfr_sin, mpfr::sin, arb_sin);
+mpfr_unary_op!(mpfr_cos, mpfr::cos, arb_cos);
+mpfr_unary_op!(mpfr_tan, mpfr::tan, arb_tan);
+mpfr_unary_op!(mpfr_asin, mpfr::asin, arb_asin);
+mpfr_unary_op!(mpfr_acos, mpfr::acos, arb_acos);
+mpfr_unary_op!(mpfr_atan, mpfr::atan, arb_atan);
 
 // Hyperbolic functions
-mpfr_unary_op!(mpfr_sinh, mpfr::sinh);
-mpfr_unary_op!(mpfr_cosh, mpfr::cosh);
+mpfr_unary_op!(mpfr_sinh, mpfr::sinh, arb_sinh);
+mpfr_unary_op!(mpfr_cosh, mpfr::cosh, arb_cosh);
 mpfr_unary_op!(mpfr_tanh, mpfr::tanh);
-mpfr_unary_op!(mpfr_asinh, mpfr::asinh);
-mpfr_unary_op!(mpfr_acosh, mpfr::acosh);
-mpfr_unary_op!(mpfr_atanh, mpfr::atanh);
+mpfr_unary_op!(mpfr_asinh, mpfr::asinh, arb_asinh);
+mpfr_unary_op!(mpfr_acosh, mpfr::acosh, arb_acosh);
+mpfr_unary_op!(mpfr_atanh, mpfr::atanh, arb_atanh);
 
 // Error functions
-mpfr_unary_op!(mpfr_erf, mpfr::erf);
-mpfr_unary_op!(mpfr_erfc, mpfr::erfc);
+mpfr_unary_op!(mpfr_erf, mpfr::erf, arb_hypgeom_erf);
+mpfr_unary_op!(mpfr_erfc, mpfr::erfc, arb_hypgeom_erfc);
 
 // Gamma functions
 pub fn mpfr_lgamma(input: &Float, out: &mut Float, rnd: Round) -> bool {
+    #[cfg(feature = "arb")]
+    if let Some(exact) = crate::arb::unary(crate::arb::arb_lgamma, input, out, rnd) {
+        return exact;
+    }
     let mut sign = 0;
     unsafe {
         mpfr::lgamma(
@@ -105,44 +143,16 @@ mpfr_binary_op!(mpfr_mul, mpfr::mul);
 mpfr_binary_op!(mpfr_div, mpfr::div);
 mpfr_binary_op!(mpfr_min, mpfr::min);
 mpfr_binary_op!(mpfr_max, mpfr::max);
-mpfr_binary_op!(mpfr_atan2, mpfr::atan2);
-mpfr_binary_op!(mpfr_pow, mpfr::pow);
+mpfr_binary_op!(mpfr_atan2, mpfr::atan2, arb_atan2);
+mpfr_binary_op!(mpfr_pow, mpfr::pow, arb_pow);
 mpfr_binary_op!(mpfr_hypot, mpfr::hypot);
 mpfr_binary_op!(mpfr_fmod, mpfr::fmod);
 mpfr_binary_op!(mpfr_remainder, mpfr::remainder);
 
-pub fn mpfr_cosu(x: &Float, n: u64, out: &mut Float, rnd: Round) -> bool {
-    unsafe {
-        mpfr::cosu(
-            out.as_raw_mut(),
-            x.as_raw(),
-            n as c_ulong,
-            to_mpfr_round(rnd),
-        ) == 0
-    }
-}
-
-pub fn mpfr_sinu(x: &Float, n: u64, out: &mut Float, rnd: Round) -> bool {
-    unsafe {
-        mpfr::sinu(
-            out.as_raw_mut(),
-            x.as_raw(),
-            n as c_ulong,
-            to_mpfr_round(rnd),
-        ) == 0
-    }
-}
-
-pub fn mpfr_tanu(x: &Float, n: u64, out: &mut Float, rnd: Round) -> bool {
-    unsafe {
-        mpfr::tanu(
-            out.as_raw_mut(),
-            x.as_raw(),
-            n as c_ulong,
-            to_mpfr_round(rnd),
-        ) == 0
-    }
-}
+// Periodic functions
+mpfr_periodic_op!(mpfr_cosu, mpfr::cosu, arb_cos_pi);
+mpfr_periodic_op!(mpfr_sinu, mpfr::sinu, arb_sin_pi);
+mpfr_periodic_op!(mpfr_tanu, mpfr::tanu, arb_tan_pi);
 
 pub fn mpfr_pi(out: &mut Float, rnd: Round) -> bool {
     unsafe { mpfr::const_pi(out.as_raw_mut(), to_mpfr_round(rnd)) == 0 }

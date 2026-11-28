@@ -71,6 +71,7 @@ jobs:
             diffutils
             m4
             make
+            mingw-w64-x86_64-clang
             mingw-w64-x86_64-gcc
 
       - name: Install cargo-zigbuild (Linux)
@@ -80,7 +81,7 @@ jobs:
       - name: Build rival3-ffi (Windows)
         if: runner.os == 'Windows'
         shell: msys2 {0}
-        run: cargo build --release --manifest-path=rival3-ffi/Cargo.toml
+        run: LIBCLANG_PATH="$(cygpath -m /mingw64/bin)" cargo build --release --manifest-path=rival3-ffi/Cargo.toml
 
       # Uses cargo-zigbuild for glibc
       - name: Build rival3-ffi (Linux)
